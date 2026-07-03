@@ -1,54 +1,189 @@
-# Remotion video
+# Documentary Pipeline
 
-<p align="center">
-  <a href="https://github.com/remotion-dev/logo">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://github.com/remotion-dev/logo/raw/main/animated-logo-banner-dark.apng">
-      <img alt="Animated Remotion Logo" src="https://github.com/remotion-dev/logo/raw/main/animated-logo-banner-light.gif">
-    </picture>
-  </a>
-</p>
+Fully automatic faceless-YouTube documentary generator. You write a **topic**,
+it produces an upload-ready package:
 
-Welcome to your Remotion project!
+- 🎬 a narrated, captioned, color-graded 1080p documentary (`.mp4`)
+- 📱 a vertical ≤59s **Short** cut from the strongest scenes
+- 🖼️ a **thumbnail**
+- 📝 **metadata** (title, description with chapters + image credits, tags)
+- 🔍 an automated **QA report** — flagged scenes get their images re-sourced
+  and the video re-rendered without you touching anything
 
-## Commands
+Under the hood: research-grounded scriptwriting (hook → curiosity gap → payoff),
+18 scene components chosen by an AI director, word-synced text/image pops driven
+by real speech timestamps, vision-verified image sourcing from four providers
+with license filtering + attribution, mood-matched ducked music, SFX, and a
+video-wide visual **theme** (gold / noir / vintage) that color-grades every
+image so mismatched stock footage reads as one film.
 
-**Install Dependencies**
+---
 
-```console
-npm i
+## 1. Requirements
+
+| What | Why | Install |
+| --- | --- | --- |
+| **Node.js 18+** | everything | https://nodejs.org |
+| **ffmpeg + ffprobe on PATH** | audio normalization, durations, QA frames | https://ffmpeg.org/download.html (`winget install ffmpeg` on Windows) |
+| **Anthropic API key** | script, planning, image checks | https://console.anthropic.com |
+| Internet at render time | Google Fonts are fetched during rendering | — |
+
+Optional but recommended: free **Pixabay** and **Pexels** API keys (see `.env.example`).
+
+## 2. Install & first run
+
+```bash
+git clone <this repo>   # or unzip the folder
+cd documentary-pipeline
+npm install
+
+cp .env.example .env    # then open .env and paste your ANTHROPIC_API_KEY
+
+npm run run-pipeline    # renders every topic in input.txt
 ```
 
-**Start Preview**
+First render downloads a headless Chrome (~150 MB) automatically. Outputs land
+in `out/`. That's the whole loop.
 
-```console
-npm run dev
+> **Minimal setup is just the Anthropic key.** Image search then uses
+> Wikimedia + Openverse only, and narration uses the free Edge neural voice.
+> Add the optional keys/endpoints in `.env.example` to unlock stock b-roll,
+> AI image generation, and the premium Chatterbox narrator.
+
+## 3. Writing topics — `input.txt`
+
+Topics are separated by lines containing `===`. A topic is a **prompt, not a
+script** — the pipeline researches it (Wikipedia) and writes the narration.
+
+```
+The final 24 hours of Pompeii, hour by hour.
+===
+THEME: noir
+LENGTH: 5min
+The disappearance of the Roman Ninth Legion.
+===
+VERBATIM: My exact narration, spoken word for word.
 ```
 
-**Render video**
+Per-topic option lines (each optional, one per line):
 
-```console
-npx remotion render
+| Line | Effect |
+| --- | --- |
+| `LENGTH: 5min` (or `90s`) | long-form: multi-act script, chapter cards, mini-hooks every act, YouTube chapters |
+| `THEME: gold\|noir\|vintage` | visual theme for this video |
+| `VERBATIM:` prefix | skip scriptwriting, use your text as-is |
+
+## 4. Outputs (per topic, in `out/`)
+
+```
+<slug>.mp4              the documentary
+<slug>_short.mp4        9:16 vertical Short (hook + highest-energy scenes)
+<slug>_thumb.png        thumbnail
+<slug>.metadata.txt     paste-ready title/description(+chapters+credits)/tags
+<slug>.qa.json          automated QA findings
 ```
 
-**Upgrade Remotion**
+Working files: `public/assets/<slug>/` (downloaded images + narration audio),
+`public/props_<slug>.json` (exact render inputs — open `npm run dev` to inspect
+scenes in Remotion Studio).
 
-```console
-npx remotion upgrade
+## 5. Commands
+
+```bash
+npm run run-pipeline                 # produce all topics in input.txt
+npm run run-pipeline -- --force      # ignore stage cache, redo everything
+npm run run-pipeline -- --no-qa      # skip the QA/repair pass
+npm run run-pipeline -- --rerender <slug>   # re-render from saved props (no API cost)
+
+npm run showcase                     # demo video containing every scene component
+npm run showcase -- noir             # ...in a specific theme
+npx tsx pipeline/themecheck.ts       # stills of every scene × every theme → out/themecheck/
+npm run dev                          # Remotion Studio (visual scene inspector)
 ```
 
-## Docs
+Every pipeline stage caches in `.cache/` — if a run crashes (network, etc.),
+run the same command again and it resumes where it stopped.
 
-Get started with Remotion by reading the [fundamentals page](https://www.remotion.dev/docs/the-fundamentals).
+## 6. Themes
 
-## Help
+A theme re-skins **all** scenes via design tokens (accents, papers, map
+palette…) and runs every fetched image through a color grade (filter + tint
+wash + film grain), so images from four different stock sites look like one
+film. The vision pass tags each image bright/mid/dark so the grade adapts per
+image; AI-generated images are prompted in the theme's style from birth.
 
-We provide help on our [Discord server](https://discord.gg/6VzzNDwUwV).
+- `gold` — warm cinematic documentary (default)
+- `noir` — high-contrast monochrome, crimson accent
+- `vintage` — sepia archive, parchment tones
 
-## Issues
+Priority: `THEME:` line in the topic → `DEFAULT_THEME` in `.env` → derived
+from the script's mood (tense→noir, somber→vintage, else gold).
 
-Found an issue with Remotion? [File an issue here](https://github.com/remotion-dev/remotion/issues/new).
+## 7. Scene components (the director picks per beat)
 
-## License
+| Component | Use |
+| --- | --- |
+| HookTitle | cold-open: drifting footage montage, title slams in on the narration's key word |
+| KenBurns | multi-image montage, focal-aware zoom/pan, ≤4s per still |
+| ArchivalFilm | old-footage treatment (grain, flicker, gate weave) |
+| MacroScreenFocus | punchy highlighted headline |
+| SplitScreen | two contrasted subjects, angled divider, VS/⇄ badge |
+| QuoteOverlay | attributed quotation, word-staggered reveal |
+| StatueReveal | artifact close-up + typewriter narration |
+| Timeline | time-driven event sweep (2–5 dated events) |
+| GlitchGrid | energetic tiled reveal, HUD accents |
+| EditorialPaper | newspaper layout |
+| Map | d3-geo vector map: camera flies to the route, all route countries highlighted |
+| StatCounter | one striking number counts up |
+| GrungeCollage | stop-motion punk manifesto card |
+| InvestigationOpener | true-crime case-file scrapbook |
+| CinematicFire | embers + procedural fire wipe for epic turning points |
+| NewspaperAnnotation | academic layout, red hand-drawn circle/underline |
+| FontRollDecoder | kinetic typography, words scramble-decode in sync with speech |
+| SocialJustice | giant image-filled matte word + duotone wash |
+| ChapterCard / Credits | act dividers (long-form) and the attribution end card |
 
-Note that for some entities a company license is needed. [Read the terms here](https://github.com/remotion-dev/remotion/blob/main/LICENSE.md).
+**Word-synced cues:** any imagery scene can carry up to 6 cues that fire the
+moment the narrator speaks a trigger word — `popText` slams a word on screen,
+`popImage` punches in a polaroid photo. Enumerations ("paper, spices, and
+gunpowder") become synced pop sequences automatically.
+
+## 8. Optional self-hosted endpoints (Modal)
+
+Both are optional; the pipeline works without them.
+
+**Chatterbox TTS** (much better narrator, MIT-licensed model):
+```bash
+pip install modal && modal setup          # one-time Modal account/auth
+modal deploy modal/chatterbox_tts.py
+modal secret create tts-auth TTS_AUTH_TOKEN=<any-random-string>
+# put the endpoint URL + the same random string into .env (see .env.example)
+```
+Falls back to the free Edge voice automatically if unreachable.
+
+**FLUX image generation**: any Modal FLUX.1-dev deployment that accepts
+`POST {prompt,width,height,steps}` with Modal proxy auth. Wire it via
+`FLUX_ENDPOINT` / `FLUX_MODAL_KEY` / `FLUX_MODAL_SECRET`.
+
+## 9. Licensing & attribution
+
+Image search is filtered to commercial-safe licenses (public domain, CC0,
+CC BY, CC BY-SA, Pexels/Pixabay licenses). Attributions are collected per
+video, rendered on the credits end card, and written into the metadata
+description. Background music is Kevin MacLeod (incompetech.com, CC BY 4.0)
+— its attribution is added automatically. AI-generated images are labeled.
+
+## 10. Troubleshooting
+
+- **`ffmpeg` not found** — install it and make sure `ffmpeg -version` works in
+  a fresh terminal. Without it audio isn't loudness-normalized and QA is skipped.
+- **Wikimedia searches fail (ENOTFOUND / timeouts)** — Wikimedia is blocked in
+  some regions (e.g. Pakistan). Use a VPN for best historical imagery; the
+  pipeline still completes via the other sources.
+- **Headless Chrome timeout on first render** — transient on Windows; the
+  renderer retries automatically. Just re-run if a whole run dies; the cache
+  resumes it.
+- **`modal deploy` crashes with a 'charmap' error on Windows** — run it as
+  `PYTHONUTF8=1 modal deploy ...`.
+- Keep the project on a local disk if possible — cloud-synced folders
+  (OneDrive/Dropbox) can lock files mid-render.

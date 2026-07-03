@@ -1,0 +1,28 @@
+
+> documentary-pipeline@1.0.0 showcase
+> tsx pipeline/showcase.ts
+
+🖼️  Reusing 21 images from the-ancient-roads-that-connected-the-wor_1
+▶ 1/18 HookTitle
+▶ 2/18 KenBurns
+▶ 3/18 ArchivalFilm
+▶ 4/18 MacroScreenFocus
+▶ 5/18 SplitScreen
+▶ 6/18 QuoteOverlay
+▶ 7/18 StatueReveal
+▶ 8/18 Timeline
+▶ 9/18 GlitchGrid
+▶ 10/18 EditorialPaper
+▶ 11/18 Map
+▶ 12/18 StatCounter
+▶ 13/18 GrungeCollage
+▶ 14/18 InvestigationOpener
+▶ 15/18 CinematicFire
+▶ 16/18 NewspaperAnnotation
+▶ 17/18 FontRollDecoder
+▶ 18/18 SocialJustice
+
+🎬 Rendering showcase (137.9s, 19 scenes)...
+📦 Bundling Remotion project (once)...
+  render 0%  render 10%  render 20%  render 30%  render 40%  render 50%  render 60%  render 70%  render 80%  render 90%  render 100%
+✅ C:\Users\ahmad\OneDrive\Desktop\FrameVideo\documentary-pipeline\out\showcase.mp4

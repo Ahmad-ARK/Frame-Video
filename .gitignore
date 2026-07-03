@@ -5,3 +5,10 @@ dist
 
 # Ignore the output video from Git but not videos you import into src/.
 out
+
+# Generated per-video assets and props
+public/assets
+public/props_*.json
+input.txt.bak
+pipeline_run.log
+.cache
