@@ -92,9 +92,16 @@ class Chatterbox:
                 parts.append(gap)
         audio = np.concatenate(parts)
 
-        # word timestamps: transcribe the generated audio with word timing
+        # word timestamps: transcribe the generated audio with word timing.
+        # faster-whisper treats raw arrays as 16 kHz — resample from the model's
+        # 24 kHz or every timestamp comes back stretched 1.5x.
+        target_sr = 16000
+        n16 = int(len(audio) * target_sr / sr)
+        audio16 = np.interp(
+            np.linspace(0, len(audio) - 1, n16), np.arange(len(audio)), audio
+        ).astype(np.float32)
         segments, _ = self.whisper.transcribe(
-            audio, language="en", word_timestamps=True, beam_size=1, vad_filter=False
+            audio16, language="en", word_timestamps=True, beam_size=1, vad_filter=False
         )
         words = []
         for seg in segments:

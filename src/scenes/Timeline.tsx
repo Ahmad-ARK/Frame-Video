@@ -14,20 +14,43 @@ export interface TimelineEvent {
  * static currentIndex that never moved). Progress sweeps the full bar across
  * the scene; each event activates with a spring as the sweep reaches it.
  */
-export const Timeline: React.FC<{ images?: string[]; events: TimelineEvent[]; imageTones?: (string | null)[] }> = ({ images = [], events, imageTones }) => {
+export const Timeline: React.FC<{
+  images?: string[];
+  events: TimelineEvent[];
+  imageTones?: (string | null)[];
+  /** scene-local frames at which each event's year is SPOKEN (from word timestamps) */
+  eventFrames?: number[];
+}> = ({ images = [], events, imageTones, eventFrames }) => {
   const theme = useTheme();
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
   const img = images[0] ?? 'placeholder.jpg';
 
-  const progress = interpolate(frame, [10, durationInFrames - 15], [0, 1], {
-    extrapolateLeft: 'clamp',
-    extrapolateRight: 'clamp',
-  });
   const n = events.length;
   // event i sits at its dot position; it activates when the sweep passes it
   const posOf = (i: number) => (n === 1 ? 0.5 : i / (n - 1));
-  const activationFrame = (i: number) => 10 + posOf(i) * (durationInFrames - 25);
+
+  // voice-synced activations when the pipeline matched the years in the
+  // narration (must be strictly increasing for the piecewise sweep)
+  const synced =
+    eventFrames &&
+    eventFrames.length === n &&
+    eventFrames.every((f, i) => i === 0 || f > eventFrames[i - 1]) &&
+    eventFrames[n - 1] < durationInFrames - 12
+      ? eventFrames
+      : null;
+  const activationFrame = (i: number) => (synced ? synced[i] : 10 + posOf(i) * (durationInFrames - 25));
+
+  // the bar reaches each dot exactly when its year is spoken
+  const progress = synced
+    ? interpolate(frame, [Math.max(0, synced[0] - 15), ...synced, durationInFrames - 10], [0, ...events.map((_, i) => posOf(i)), 1], {
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+      })
+    : interpolate(frame, [10, durationInFrames - 15], [0, 1], {
+        extrapolateLeft: 'clamp',
+        extrapolateRight: 'clamp',
+      });
 
   const zoom = interpolate(frame, [0, durationInFrames], [1.05, 1.14], { easing: Easing.linear });
 

@@ -128,20 +128,59 @@ function imagesNeeded(plan: ScenePlan, durationSec: number): number {
 const normWord = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
 
 /**
- * Map cue trigger words to scene-local frames using the REAL word timestamps.
- * Matching is substring-based over normalized token windows because Edge TTS
- * emits date/number expressions as single tokens ("August 24th, 79").
+ * Align narration tokens to whisper word timestamps. Triggers are matched
+ * against the NARRATION (the planner copies it verbatim) instead of whisper's
+ * transcription, which mangles numbers ("25"→"twenty-five") and proper nouns
+ * ("Hispana"→"Hispanic"). Unanchored tokens get timestamps interpolated from
+ * their nearest anchored neighbors.
  */
-function matchCueFrames(cues: Cue[], words: WordStamp[], durationInFrames: number, logPrefix: string): number[] {
-  const norms = words.map((w) => normWord(w.text));
+function buildAligner(narration: string, words: WordStamp[]) {
+  const tokens = narration.split(/\s+/).filter(Boolean);
+  const tNorm = tokens.map(normWord);
+  const wNorm = words.map((w) => normWord(w.text));
+  const anchor: number[] = new Array(tokens.length).fill(-1);
+  let j = 0;
+  for (let i = 0; i < tokens.length; i++) {
+    if (!tNorm[i]) continue;
+    for (let k = j; k < Math.min(j + 8, wNorm.length); k++) {
+      const a = tNorm[i];
+      const b = wNorm[k];
+      if (!b) continue;
+      if (a === b || (b.length > 2 && a.includes(b)) || (a.length > 2 && b.includes(a))) {
+        anchor[i] = k;
+        j = k + 1;
+        break;
+      }
+    }
+  }
+  const timeOf = (i: number): number | null => {
+    const idx = Math.max(0, Math.min(i, tokens.length - 1));
+    if (anchor[idx] >= 0) return words[anchor[idx]].start;
+    let a = -1;
+    let b = -1;
+    for (let x = idx - 1; x >= 0; x--) if (anchor[x] >= 0) { a = x; break; }
+    for (let x = idx + 1; x < tokens.length; x++) if (anchor[x] >= 0) { b = x; break; }
+    if (a < 0 && b < 0) return null;
+    if (a < 0) return Math.max(0, words[anchor[b]].start - 0.35 * (b - idx));
+    if (b < 0) return words[anchor[a]].start + 0.35 * (idx - a);
+    const ta = words[anchor[a]].start;
+    const tb = words[anchor[b]].start;
+    return ta + ((tb - ta) * (idx - a)) / (b - a);
+  };
+  return { tokens, tNorm, timeOf };
+}
+
+/** Map cue trigger words to scene-local frames via narration-anchored alignment. */
+function matchCueFrames(cues: Cue[], narration: string, words: WordStamp[], durationInFrames: number, logPrefix: string): number[] {
+  const al = buildAligner(narration, words);
   let searchFrom = 0;
 
-  const findFrom = (start: number, target: string): number => {
+  const findTokenIdx = (start: number, target: string): number => {
     if (!target) return -1;
-    for (let i = start; i < words.length; i++) {
+    for (let i = start; i < al.tokens.length; i++) {
       let acc = '';
-      for (let j = i; j < Math.min(i + 6, words.length); j++) {
-        acc += norms[j];
+      for (let k = i; k < Math.min(i + 6, al.tokens.length); k++) {
+        acc += al.tNorm[k];
         if (acc.includes(target)) return i;
         if (acc.length > target.length + 14) break;
       }
@@ -151,34 +190,37 @@ function matchCueFrames(cues: Cue[], words: WordStamp[], durationInFrames: numbe
 
   return cues.map((cue, ci) => {
     const target = normWord(cue.trigger);
-    let idx = findFrom(searchFrom, target);
+    let idx = findTokenIdx(searchFrom, target);
     if (idx === -1) {
-      // fall back to the longest single word of the trigger
       const parts = cue.trigger.split(/\s+/).map(normWord).filter((p) => p.length > 2);
       parts.sort((a, b) => b.length - a.length);
       for (const part of parts) {
-        idx = findFrom(searchFrom, part);
+        idx = findTokenIdx(searchFrom, part);
         if (idx !== -1) break;
       }
     }
     if (idx !== -1) {
       searchFrom = idx + 1;
-      return Math.round(words[idx].start * FPS);
+      const t = al.timeOf(idx);
+      if (t !== null) return Math.round(t * FPS);
     }
-    console.warn(`${logPrefix} ⚠️ cue trigger "${cue.trigger}" not found — placing proportionally`);
+    console.warn(`${logPrefix} ⚠️ cue trigger "${cue.trigger}" not in narration — placing proportionally`);
     return Math.round(((ci + 1) / (cues.length + 1)) * durationInFrames);
   });
 }
 
 /** For FontRollDecoder: sync display words to the moment they are spoken. */
-function matchWordDelays(displayWords: { text: string }[], words: WordStamp[]): number[] {
+function matchWordDelays(displayWords: { text: string }[], narration: string, words: WordStamp[]): number[] {
+  const al = buildAligner(narration, words);
   let searchFrom = 0;
   return displayWords.map((w, idx) => {
     const target = normWord(w.text);
-    for (let i = searchFrom; i < words.length; i++) {
-      if (normWord(words[i].text) === target) {
+    for (let i = searchFrom; i < al.tokens.length; i++) {
+      if (al.tNorm[i] === target || (target.length > 2 && al.tNorm[i].includes(target))) {
         searchFrom = i + 1;
-        return Math.round(words[i].start * FPS);
+        const t = al.timeOf(i);
+        if (t !== null) return Math.round(t * FPS);
+        break;
       }
     }
     return idx * 6; // staggered fallback
@@ -213,7 +255,7 @@ async function produceScene(opts: {
     Record<string, unknown> & { cues?: Cue[] };
   const P = `  [S${sceneIdx + 1}]`;
 
-  const cacheKey = `scene_${slug}_${sceneIdx}_${hash(JSON.stringify(scenePlan) + ttsSignature())}`;
+  const cacheKey = `scene_${slug}_${sceneIdx}_${hash(JSON.stringify(scenePlan) + ttsSignature() + '|match-v3')}`;
   const cachedScene = readCache<SceneArtifact>(cacheKey);
   if (cachedScene) {
     const files = [cachedScene.audioPath, ...((cachedScene.props.images as string[]) ?? [])].filter(
@@ -256,7 +298,7 @@ async function produceScene(opts: {
 
   const cues: ResolvedCue[] = [];
   if (planCues && planCues.length > 0) {
-    const cueFrames = matchCueFrames(planCues, tts.words, durationInFrames, P);
+    const cueFrames = matchCueFrames(planCues, narration, tts.words, durationInFrames, P);
     for (let c = 0; c < planCues.length; c++) {
       const cue = planCues[c];
       if (cue.action === 'popText' && cue.text) {
@@ -285,13 +327,26 @@ async function produceScene(opts: {
   const props: Record<string, unknown> = { ...specificProps, images, focalPoints, imageTones, cues };
   if (component === 'FontRollDecoder') {
     const displayWords = (specificProps as { words?: { text: string }[] }).words ?? [];
-    props.wordDelays = matchWordDelays(displayWords, tts.words);
+    props.wordDelays = matchWordDelays(displayWords, narration, tts.words);
+  }
+  if (component === 'Timeline') {
+    // sync each event's dot to the moment its year is spoken
+    const events = (specificProps as { events?: { year: string }[] }).events ?? [];
+    if (events.length > 0) {
+      props.eventFrames = matchCueFrames(
+        events.map((e) => ({ trigger: e.year, action: 'popText' as const })),
+        narration,
+        tts.words,
+        durationInFrames,
+        P,
+      );
+    }
   }
   if (component === 'HookTitle') {
     // the title card enters exactly when the narrator hits the trigger word
     const trigger = (specificProps as { titleTrigger?: string }).titleTrigger;
     if (trigger) {
-      const [frame] = matchCueFrames([{ trigger, action: 'popText', text: '' }], tts.words, durationInFrames, P);
+      const [frame] = matchCueFrames([{ trigger, action: 'popText', text: '' }], narration, tts.words, durationInFrames, P);
       props.titleAppearFrame = frame;
     }
   }

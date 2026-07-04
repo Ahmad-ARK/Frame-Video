@@ -16,7 +16,8 @@ export interface TtsResult {
 
 /** Cache-key component: switching provider/voice must invalidate scene caches. */
 export function ttsSignature(): string {
-  return chatterboxAvailable() ? `chatterbox:${CHATTERBOX_EXAGGERATION}` : `edge:${TTS_VOICE}`;
+  // v2: whisper alignment fixed (16 kHz resample) — invalidates pre-fix caches
+  return chatterboxAvailable() ? `chatterbox-v2:${CHATTERBOX_EXAGGERATION}` : `edge:${TTS_VOICE}`;
 }
 
 function chatterboxAvailable(): boolean {

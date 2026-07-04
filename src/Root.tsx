@@ -154,7 +154,9 @@ const DocumentaryVideo: React.FC<DocumentaryProps> = ({ scenes, credits, credits
               <Sfx key={`cs-${c}`} name={cue.action === 'popText' ? 'hit' : 'whoosh_short'} at={cue.frame} volume={cue.action === 'popText' ? 0.65 : 0.5} />
             ))}
             <CueOverlay cues={cues} />
-            {!TEXT_SCENES.has(scene.component) && <Captions words={scene.wordTimestamps} />}
+            {!TEXT_SCENES.has(scene.component) && (
+              <Captions words={scene.wordTimestamps} raised={scene.component === 'Timeline'} />
+            )}
           </Sequence>
         );
       })}

@@ -39,7 +39,7 @@ function chunkWords(words: Word[]): number[][] {
  * - frame-based spring pop instead of CSS transitions (which do nothing in
  *   deterministic rendering)
  */
-export const Captions: React.FC<{ words?: Word[] }> = ({ words }) => {
+export const Captions: React.FC<{ words?: Word[]; raised?: boolean }> = ({ words, raised = false }) => {
   const theme = useTheme();
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
@@ -61,7 +61,8 @@ export const Captions: React.FC<{ words?: Word[] }> = ({ words }) => {
       style={{
         justifyContent: 'flex-end',
         alignItems: 'center',
-        paddingBottom: 54,
+        // raised: clear bottom-anchored scene UI (e.g. the Timeline track)
+        paddingBottom: raised ? 300 : 54,
         pointerEvents: 'none',
         zIndex: 100,
       }}
