@@ -170,6 +170,36 @@ async function main() {
       build: (images) => ({ images, title: 'The Fall', subtitle: '1453' }),
     },
     {
+      component: 'ParallaxDeep',
+      narration: 'The parallax deep scene. A true three dimensional camera dolly separates the foreground from the background.',
+      imageCount: 1,
+      build: (images) => ({ images }),
+    },
+    {
+      component: 'TitleParallax',
+      narration: 'The title parallax scene. A premium emphasis card, floating text in true three dimensional space.',
+      imageCount: 0,
+      build: () => ({ images: [], title: 'One Empire Falls', kicker: 'PART II' }),
+    },
+    {
+      component: 'PhotoCarousel3D',
+      narration: 'The photo carousel scene. A ring of photographs on a three dimensional cylinder that snaps from one to the next.',
+      imageCount: 4,
+      build: (images) => ({ images }),
+    },
+    {
+      component: 'DocumentRig',
+      narration: 'The document rig scene. A letter on a desk that the camera picks up and reads, one line highlighted in marker.',
+      imageCount: 1,
+      build: (images) => ({ images, docTitle: 'The Treaty of Rome', stampText: 'SEALED' }),
+    },
+    {
+      component: 'CubeReveal',
+      narration: 'The cube reveal scene. The whole frame physically rotates from one image to a completely different one.',
+      imageCount: 2,
+      build: (images) => ({ images, faceLabels: ['BEFORE', 'AFTER'] }),
+    },
+    {
       component: 'NewspaperAnnotation',
       narration: 'The newspaper annotation scene. An academic breakdown that circles the evidence in red marker.',
       imageCount: 1,

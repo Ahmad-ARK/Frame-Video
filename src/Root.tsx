@@ -14,6 +14,11 @@ import { ChapterCard } from './scenes/ChapterCard';
 import { MacroScreenFocus, QuoteOverlay, StatueReveal, GlitchGrid, EditorialPaper } from './scenes/TextScenes';
 import { GrungeCollage, InvestigationOpener, NewspaperAnnotation } from './scenes/GrungeScenes';
 import { CinematicFire, FontRollDecoder, SocialJustice } from './scenes/KineticScenes';
+import { ParallaxDeep } from './scenes/ParallaxDeep';
+import { TitleParallax } from './scenes/TitleParallax';
+import { PhotoCarousel3D } from './scenes/PhotoCarousel3D';
+import { DocumentRig } from './scenes/DocumentRig';
+import { CubeReveal } from './scenes/CubeReveal';
 import { Captions, type Word } from './Captions';
 import { CueOverlay, type CueData } from './CueOverlay';
 import { Sfx, ImpactShake } from './Sfx';
@@ -44,6 +49,11 @@ const COMPONENTS: Record<string, React.FC<any>> = {
   CinematicFire,
   FontRollDecoder,
   SocialJustice,
+  ParallaxDeep,
+  TitleParallax,
+  PhotoCarousel3D,
+  DocumentRig,
+  CubeReveal,
   ChapterCard,
 };
 
@@ -62,6 +72,7 @@ const TEXT_SCENES = new Set([
   'FontRollDecoder',
   'SocialJustice',
   'ChapterCard',
+  'TitleParallax',
 ]);
 
 export interface SceneData {

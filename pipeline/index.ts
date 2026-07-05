@@ -13,18 +13,22 @@ import { planScenes } from './planner';
 import { researchTopic } from './research';
 import { synthesize, ttsSignature } from './tts';
 import { resolveImages } from './assets/resolve';
-import { renderVideo, renderThumbnail } from './render';
+import { renderVideo, renderThumbnail, syncPublicFileToBundle } from './render';
 import { writeMetadata } from './metadata';
 import { qaVideo } from './qa';
+import { runReview } from './review';
 import { pickMusic } from './music';
+import { removeBackgroundToFile } from './thumbnail/cutout';
 import { isTheme, themeFromMood, FLUX_STYLES, type ThemeName } from './themes';
-import type { Credit, Cue, ImageQuery, Plan, QaFinding, RenderProps, RenderScene, ResolvedCue, ScenePlan, Script, WordStamp } from './types';
+import type { Credit, Cue, ImageMeta, ImageQuery, Plan, QaFinding, RenderProps, RenderScene, ResolvedCue, ScenePlan, Script, WordStamp } from './types';
 
 // ---------- CLI ----------
 
 const argv = process.argv.slice(2);
 const FORCE = argv.includes('--force');
 const NO_QA = argv.includes('--no-qa');
+const REVIEW = argv.includes('--review');
+const THUMBS_ALL = argv.includes('--thumbs=all');
 const RERENDER_SLUG = argv.includes('--rerender') ? argv[argv.indexOf('--rerender') + 1] : null;
 
 // ---------- cache ----------
@@ -75,6 +79,25 @@ async function mapPool<T, R>(items: T[], limit: number, fn: (item: T, index: num
   return results;
 }
 
+/**
+ * Split a list into the fewest chunks of size <= max, balanced so no chunk is
+ * tiny (17 with max 8 → [6,6,5], not [8,8,1]). Used to keep each scene-planning
+ * call within the 8-scene schema cap without leaving a stray 1-2 beat chunk.
+ */
+function chunkBeats<T>(items: T[], max: number): T[][] {
+  const numChunks = Math.max(1, Math.ceil(items.length / max));
+  const base = Math.floor(items.length / numChunks);
+  const extra = items.length % numChunks;
+  const chunks: T[][] = [];
+  let i = 0;
+  for (let c = 0; c < numChunks; c++) {
+    const size = base + (c < extra ? 1 : 0);
+    chunks.push(items.slice(i, i + size));
+    i += size;
+  }
+  return chunks;
+}
+
 interface Topic {
   text: string;
   targetWords: number;
@@ -111,8 +134,10 @@ function imagesNeeded(plan: ScenePlan, durationSec: number): number {
   switch (plan.component) {
     case 'Map':
     case 'FontRollDecoder':
+    case 'TitleParallax':
       return 0; // fully vector / typographic scenes
     case 'SplitScreen':
+    case 'CubeReveal':
       return 2;
     case 'KenBurns':
     case 'ArchivalFilm':
@@ -120,6 +145,8 @@ function imagesNeeded(plan: ScenePlan, durationSec: number): number {
     case 'HookTitle':
       // the hook is a montage now — footage keeps moving before/after the title card
       return Math.min(3, Math.max(1, Math.ceil(durationSec / MAX_SECONDS_PER_IMAGE)));
+    case 'PhotoCarousel3D':
+      return Math.min(5, Math.max(3, Math.ceil(durationSec / 3.5)));
     default:
       return 1;
   }
@@ -255,10 +282,13 @@ async function produceScene(opts: {
     Record<string, unknown> & { cues?: Cue[] };
   const P = `  [S${sceneIdx + 1}]`;
 
-  const cacheKey = `scene_${slug}_${sceneIdx}_${hash(JSON.stringify(scenePlan) + ttsSignature() + '|match-v3')}`;
+  const cacheKey = `scene_${slug}_${sceneIdx}_${hash(JSON.stringify(scenePlan) + ttsSignature() + '|match-v6')}`;
   const cachedScene = readCache<SceneArtifact>(cacheKey);
   if (cachedScene) {
-    const files = [cachedScene.audioPath, ...((cachedScene.props.images as string[]) ?? [])].filter(
+    const cutoutFiles = ((cachedScene.props.cutouts as (string | null)[] | undefined) ?? []).filter(
+      (f): f is string => !!f,
+    );
+    const files = [cachedScene.audioPath, ...((cachedScene.props.images as string[]) ?? []), ...cutoutFiles].filter(
       (f) => f && f !== 'placeholder.jpg',
     );
     if (files.every((f) => fs.existsSync(path.join(PUBLIC_DIR, f)))) {
@@ -278,6 +308,7 @@ async function produceScene(opts: {
   let images: string[] = [];
   let focalPoints: ({ x: number; y: number } | null)[] = [];
   let imageTones: (string | null)[] = [];
+  let imageMeta: ImageMeta[] = [];
   if (needed > 0) {
     const resolved = await resolveImages({
       queries: imageQueries,
@@ -292,6 +323,17 @@ async function produceScene(opts: {
     images = resolved.map((r) => r.file);
     focalPoints = resolved.map((r) => r.focal ?? null);
     imageTones = resolved.map((r) => r.tone ?? null);
+    imageMeta = resolved.map((r) => ({
+      query: r.query,
+      provider: r.credit.provider,
+      author: r.credit.author,
+      license: r.credit.license,
+      sourceUrl: r.credit.sourceUrl,
+      title: r.credit.title,
+      tone: r.tone ?? null,
+      focal: r.focal ?? null,
+      subject: r.subject ?? null,
+    }));
     credits.push(...resolved.map((r) => r.credit));
     console.log(`${P} 🖼️  ${images.length} image(s)`);
   }
@@ -316,7 +358,17 @@ async function produceScene(opts: {
         });
         if (img.file !== 'placeholder.jpg') {
           credits.push(img.credit);
-          cues.push({ frame: cueFrames[c], action: 'popImage', image: img.file });
+          cues.push({
+            frame: cueFrames[c],
+            action: 'popImage',
+            image: img.file,
+            query: img.query,
+            provider: img.credit.provider,
+            author: img.credit.author,
+            license: img.credit.license,
+            sourceUrl: img.credit.sourceUrl,
+            title: img.credit.title,
+          });
         }
       }
     }
@@ -324,7 +376,7 @@ async function produceScene(opts: {
     if (cues.length > 0) console.log(`${P} ⚡ ${cues.length} cue(s)`);
   }
 
-  const props: Record<string, unknown> = { ...specificProps, images, focalPoints, imageTones, cues };
+  const props: Record<string, unknown> = { ...specificProps, images, focalPoints, imageTones, imageMeta, cues };
   if (component === 'FontRollDecoder') {
     const displayWords = (specificProps as { words?: { text: string }[] }).words ?? [];
     props.wordDelays = matchWordDelays(displayWords, narration, tts.words);
@@ -350,6 +402,18 @@ async function produceScene(opts: {
       props.titleAppearFrame = frame;
     }
   }
+  if (component === 'ParallaxDeep' && imageMeta[0] && (imageMeta[0].subject === 'person' || imageMeta[0].subject === 'object')) {
+    // true parallax needs a foreground layer separate from the image itself
+    const cutoutAbs = path.join(assetDirAbs, `cutout_${sceneIdx}.png`);
+    if (await removeBackgroundToFile(path.join(PUBLIC_DIR, images[0]), cutoutAbs)) {
+      props.cutouts = [`${assetDirRel}/${path.basename(cutoutAbs)}`];
+      console.log(`${P} ✂️  cutout generated`);
+    }
+  }
+  if (component === 'CubeReveal') {
+    // the flip lands on the scene's first cue trigger if the planner gave one, else duration*0.45
+    props.flipFrame = planCues && planCues.length > 0 ? cues[0]?.frame : Math.round(durationInFrames * 0.45);
+  }
 
   const artifact: SceneArtifact = {
     component,
@@ -365,9 +429,57 @@ async function produceScene(opts: {
   return artifact;
 }
 
+/**
+ * Rebuild the video-level credit ledger from each scene's `imageMeta` + any
+ * popImage cue provenance. Reproducible after review-UI edits (refetch/upload)
+ * since credits are derived from current props rather than collected once
+ * during production.
+ */
+export function rebuildCreditsFromScenes(scenes: RenderScene[], extra: Credit[] = []): Credit[] {
+  const credits: Credit[] = [];
+  const seen = new Set<string>();
+  const add = (c: Credit) => {
+    // 'user' (uploaded via the review UI) still gets a ledger line — no
+    // license claim to make, but the user should see their own asset listed.
+    if (!c.provider || c.provider === 'placeholder') return;
+    const key = c.sourceUrl ?? `${c.provider}:${c.title}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    credits.push(c);
+  };
+  for (const scene of scenes) {
+    const meta = (scene.props.imageMeta as ImageMeta[] | undefined) ?? [];
+    for (const m of meta) {
+      add({ provider: m.provider, author: m.author, license: m.license, sourceUrl: m.sourceUrl, title: m.title });
+    }
+    const cues = (scene.props.cues as ResolvedCue[] | undefined) ?? [];
+    for (const c of cues) {
+      if (c.action !== 'popImage' || !c.provider) continue;
+      add({ provider: c.provider, author: c.author, license: c.license, sourceUrl: c.sourceUrl, title: c.title });
+    }
+  }
+  for (const c of extra) add(c);
+  return credits;
+}
+
+/** First image across all scenes whose vision-tagged subject is cutout-worthy. */
+function pickCutoutSource(scenes: RenderScene[]): string | null {
+  for (const scene of scenes) {
+    const meta = (scene.props.imageMeta as ImageMeta[] | undefined) ?? [];
+    const images = (scene.props.images as string[] | undefined) ?? [];
+    for (let i = 0; i < meta.length; i++) {
+      if ((meta[i]?.subject === 'person' || meta[i]?.subject === 'object') && images[i] && images[i] !== 'placeholder.jpg') {
+        return images[i];
+      }
+    }
+  }
+  return null;
+}
+
 // ---------- per-video production ----------
 
 const CHAPTER_CARD_FRAMES = 75;
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'];
 
 async function produceVideo(topic: Topic, index: number): Promise<void> {
   const research = topic.text.toUpperCase().startsWith('VERBATIM:')
@@ -389,19 +501,33 @@ async function produceVideo(topic: Topic, index: number): Promise<void> {
   const assetDirRel = `assets/${slug}`;
   fs.mkdirSync(assetDirAbs, { recursive: true });
 
-  // plan every act (cached per act)
+  // plan every act. An act with >8 beats is split into balanced <=8-beat chunks
+  // and planned across multiple calls (the scene schema caps at 8 scenes/call).
+  // Chunks belong to the SAME act, so no act divider appears between them —
+  // dividers land only on real act boundaries (blank lines, for VERBATIM).
   const plans: Plan[] = [];
   for (let a = 0; a < script.acts.length; a++) {
     const act = script.acts[a];
-    const plan = await cached<Plan>(`plan_${hash(script.title + a + JSON.stringify(act.beats))}`, () =>
-      planScenes({
-        videoTitle: script.title,
-        beats: act.beats,
-        isFirstAct: a === 0,
-        actLabel: script.acts.length > 1 ? `Part ${a + 1}: ${act.title ?? ''}` : undefined,
-      }),
-    );
-    plans.push(plan);
+    const chunks = chunkBeats(act.beats, 8);
+    const actScenes: ScenePlan[] = [];
+    for (let c = 0; c < chunks.length; c++) {
+      const chunk = chunks[c];
+      // avoid the same component straddling a chunk seam (the planner can't see across calls)
+      const prevComponent = actScenes.length > 0 ? actScenes[actScenes.length - 1].component : undefined;
+      const chunkPlan = await cached<Plan>(
+        `plan_${hash(script.title + a + c + JSON.stringify(chunk) + (prevComponent ?? ''))}`,
+        () =>
+          planScenes({
+            videoTitle: script.title,
+            beats: chunk,
+            isFirstAct: a === 0 && c === 0,
+            actLabel: script.acts.length > 1 ? `Part ${a + 1}: ${act.title ?? ''}` : undefined,
+            prevComponent,
+          }),
+      );
+      actScenes.push(...chunkPlan.scenes);
+    }
+    plans.push({ scenes: actScenes });
   }
 
   const totalScenes = plans.reduce((n, p) => n + p.scenes.length, 0);
@@ -439,9 +565,10 @@ async function produceVideo(topic: Topic, index: number): Promise<void> {
       currentAct = act;
       actStartFrames[act] = cursor;
       if (act > 0) {
+        // premium act divider — replaces the old plain ChapterCard (kept registered for legacy compat)
         scenes.push({
-          component: 'ChapterCard',
-          props: { actNumber: act + 1, title: script.acts[act].title },
+          component: 'TitleParallax',
+          props: { title: script.acts[act].title ?? script.title, kicker: `PART ${ROMAN[act] ?? act + 1}` },
           narration: '',
           wordTimestamps: [],
           startFrame: cursor,
@@ -495,12 +622,51 @@ async function produceVideo(topic: Topic, index: number): Promise<void> {
   const propsPath = path.join(PUBLIC_DIR, `props_${slug}.json`);
   fs.writeFileSync(propsPath, JSON.stringify(props, null, 2));
 
+  if (REVIEW) {
+    await runReview({ props, propsPath, assetDirAbs, assetDirRel });
+    // the user may have edited/uploaded images — credits and thumbnail must
+    // reflect the final state before rendering
+    props.credits = rebuildCreditsFromScenes(props.scenes, props.credits);
+    props.thumbImage =
+      props.scenes.flatMap((s) => (s.props.images as string[] | undefined) ?? []).find((f) => f !== 'placeholder.jpg') ??
+      'placeholder.jpg';
+    fs.writeFileSync(propsPath, JSON.stringify(props, null, 2));
+  }
+
   fs.mkdirSync(OUT_DIR, { recursive: true });
   const videoPath = path.join(OUT_DIR, `${slug}.mp4`);
   console.log(`\n🎬 Rendering ${slug}.mp4 (${(props.totalDuration / FPS).toFixed(1)}s)...`);
+  // Remotion's bundler copies public/ into the bundle ONCE and reuses that
+  // bundle for the rest of the process — from video 2 onward in a multi-topic
+  // batch, this video's images wouldn't exist in that stale copy without an
+  // explicit sync. See the big comment on syncPublicFileToBundle in render.ts.
+  await syncPublicFileToBundle(assetDirRel);
   await renderVideo(props, videoPath);
-  await renderThumbnail({ title: script.title, image: thumbImage, theme: videoTheme }, path.join(OUT_DIR, `${slug}_thumb.png`));
-  console.log(`🖼️  Thumbnail → ${slug}_thumb.png`);
+
+  // subject cutout for the thumbnail's 'subject' layout — best-effort, never blocks
+  const finalThumbImage = (props.thumbImage as string) ?? thumbImage;
+  const cutoutSource = pickCutoutSource(props.scenes);
+  let cutoutRel: string | undefined;
+  if (cutoutSource) {
+    const cutoutAbs = path.join(assetDirAbs, 'thumb_cutout.png');
+    console.log('✂️  Removing background for thumbnail subject...');
+    if (await removeBackgroundToFile(path.join(PUBLIC_DIR, cutoutSource), cutoutAbs)) {
+      cutoutRel = `${assetDirRel}/thumb_cutout.png`;
+      await syncPublicFileToBundle(cutoutRel); // generated after the bundle exists — must mirror explicitly
+    }
+  }
+
+  const thumbBase = { title: script.title, image: finalThumbImage, theme: videoTheme, thumbText: script.thumbText, cutout: cutoutRel };
+  if (THUMBS_ALL) {
+    for (const layout of ['subject', 'split', 'full'] as const) {
+      if (layout === 'subject' && !cutoutRel) continue;
+      await renderThumbnail({ ...thumbBase, layout }, path.join(OUT_DIR, `${slug}_thumb_${layout}.png`));
+    }
+    console.log(`🖼️  Thumbnails → ${slug}_thumb_{subject,split,full}.png`);
+  } else {
+    await renderThumbnail(thumbBase, path.join(OUT_DIR, `${slug}_thumb.png`));
+    console.log(`🖼️  Thumbnail → ${slug}_thumb.png`);
+  }
   writeMetadata({ slug, script, scenes, credits, actStartFrames, outDir: OUT_DIR });
 
   if (!NO_QA) {
@@ -513,6 +679,7 @@ async function produceVideo(topic: Topic, index: number): Promise<void> {
   const shortsProps = buildShortsProps(props, script.title);
   if (shortsProps) {
     console.log(`📱 Rendering ${slug}_short.mp4 (${(shortsProps.totalDuration / FPS).toFixed(1)}s vertical)...`);
+    await syncPublicFileToBundle(assetDirRel); // cheap no-op if already synced; cheap safety net otherwise
     await renderVideo(shortsProps, path.join(OUT_DIR, `${slug}_short.mp4`), 'Shorts');
   }
   console.log(`✅ ${videoPath}`);
@@ -609,10 +776,23 @@ async function qaAndRepair(opts: {
       scene.props.images = resolved.map((r) => r.file);
       scene.props.focalPoints = resolved.map((r) => r.focal ?? null);
       scene.props.imageTones = resolved.map((r) => r.tone ?? null);
+      scene.props.imageMeta = resolved.map((r) => ({
+        query: r.query,
+        provider: r.credit.provider,
+        author: r.credit.author,
+        license: r.credit.license,
+        sourceUrl: r.credit.sourceUrl,
+        title: r.credit.title,
+        tone: r.tone ?? null,
+        focal: r.focal ?? null,
+        subject: r.subject ?? null,
+      }));
       resolved.forEach((r) => addCredit(r.credit));
     }
     props.usedUrls = [...usedUrls];
+    props.credits = rebuildCreditsFromScenes(props.scenes, props.credits);
     fs.writeFileSync(propsPath, JSON.stringify(props, null, 2));
+    await syncPublicFileToBundle(assetDirRel); // repaired images were just downloaded after the bundle already exists
     await renderVideo(props, videoPath);
     findings = await qaVideo(videoPath, props.scenes);
     console.log('🔍 QA after repair:');
@@ -638,6 +818,8 @@ async function rerender(slug: string): Promise<void> {
     thumbImage?: string;
   };
   console.log(`🎬 Re-rendering ${slug}.mp4 from saved props...`);
+  const assetDirRel = `assets/${slug}`;
+  await syncPublicFileToBundle(assetDirRel); // fresh bundle this process — mirror this video's asset dir into it
   await renderVideo(props, path.join(OUT_DIR, `${slug}.mp4`));
   const shortsProps = buildShortsProps(props, props.script?.title ?? slug);
   if (shortsProps) {
@@ -645,8 +827,24 @@ async function rerender(slug: string): Promise<void> {
     await renderVideo(shortsProps, path.join(OUT_DIR, `${slug}_short.mp4`), 'Shorts');
   }
   if (props.script) {
+    const assetDirAbs = path.join(PUBLIC_DIR, 'assets', slug);
+    const cutoutSource = pickCutoutSource(props.scenes);
+    let cutoutRel: string | undefined;
+    if (cutoutSource) {
+      const cutoutAbs = path.join(assetDirAbs, 'thumb_cutout.png');
+      if (await removeBackgroundToFile(path.join(PUBLIC_DIR, cutoutSource), cutoutAbs)) {
+        cutoutRel = `assets/${slug}/thumb_cutout.png`;
+        await syncPublicFileToBundle(cutoutRel); // generated after the bundle exists — must mirror explicitly
+      }
+    }
     await renderThumbnail(
-      { title: props.script.title, image: props.thumbImage ?? 'placeholder.jpg' },
+      {
+        title: props.script.title,
+        image: props.thumbImage ?? 'placeholder.jpg',
+        theme: props.theme as string | undefined,
+        thumbText: props.script.thumbText,
+        cutout: cutoutRel,
+      },
       path.join(OUT_DIR, `${slug}_thumb.png`),
     );
     writeMetadata({

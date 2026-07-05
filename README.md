@@ -78,7 +78,7 @@ Per-topic option lines (each optional, one per line):
 ```
 <slug>.mp4              the documentary
 <slug>_short.mp4        9:16 vertical Short (hook + highest-energy scenes)
-<slug>_thumb.png        thumbnail
+<slug>_thumb.png        thumbnail (or _thumb_subject/_split/_full.png with --thumbs=all)
 <slug>.metadata.txt     paste-ready title/description(+chapters+credits)/tags
 <slug>.qa.json          automated QA findings
 ```
@@ -93,6 +93,8 @@ scenes in Remotion Studio).
 npm run run-pipeline                 # produce all topics in input.txt
 npm run run-pipeline -- --force      # ignore stage cache, redo everything
 npm run run-pipeline -- --no-qa      # skip the QA/repair pass
+npm run run-pipeline -- --review     # pause before rendering for an asset review (see §5b)
+npm run run-pipeline -- --thumbs=all # render all 3 thumbnail layouts instead of just one (see §5c)
 npm run run-pipeline -- --rerender <slug>   # re-render from saved props (no API cost)
 
 npm run showcase                     # demo video containing every scene component
@@ -103,6 +105,49 @@ npm run dev                          # Remotion Studio (visual scene inspector)
 
 Every pipeline stage caches in `.cache/` — if a run crashes (network, etc.),
 run the same command again and it resumes where it stopped.
+
+## 5b. Asset review UI (`--review`)
+
+`npm run run-pipeline -- --review` pauses each video right after all images
+are resolved, before rendering starts, and opens a local page at
+**http://localhost:4711** listing every image slot in the video: the scene,
+the narration, the search query used, and the image found (provider +
+license shown). Slots with no image found are outlined in red.
+
+Per slot you can:
+- **edit the query and click Re-fetch** — pulls a fresh candidate (previously
+  used images are never repeated);
+- **Upload** your own `.jpg`/`.png`/`.webp` to replace that slot entirely
+  (credited as "User-provided" in the ledger).
+
+Click **Continue → Render** when you're happy; the pipeline resumes with your
+edits baked in (including the thumbnail and the credits ledger). Everything
+is saved to `public/props_<slug>.json` after every edit, so closing the
+browser tab mid-review loses nothing — just re-run with `--review` again.
+
+## 5c. Thumbnails
+
+Three layouts, auto-selected per video:
+
+- **subject** — a background-removed cutout of the video's main person/object
+  pops in front of a blurred, graded backdrop with a themed outline glow. Used
+  automatically whenever the vision pass tags an image's focal point as a
+  `person` or `object` (cutouts run locally via `@imgly/background-removal-node`
+  — no API cost, ~5-10s the first time a model downloads, seconds after).
+- **split** — a solid color panel with the headline next to a graded image.
+  Used as the fallback layout.
+- **full** — graded full-bleed image behind the headline (the old design,
+  now with a bolder stroke and higher-contrast grade). Used if neither of the
+  above applies.
+
+The headline text itself is a dedicated **`thumbText`** the script stage
+writes alongside the narration — a punchy 2-4 word curiosity hook ("NEVER
+FOUND", "300 DIED") distinct from the video's title, sized and stroked for
+readability at small feed sizes.
+
+Run `npm run run-pipeline -- --thumbs=all` to render all three layouts side
+by side (`<slug>_thumb_subject.png` / `_split.png` / `_full.png`) and pick
+your favorite by hand.
 
 ## 6. Themes
 

@@ -45,7 +45,10 @@ export async function qaVideo(videoPath: string, scenes: RenderScene[]): Promise
           '- "broken": placeholder-looking/black/stretched/corrupted visuals\n' +
           '- "text": text CLIPPED by the frame edge or overflowing its container\n' +
           'Intentional, never flag: dark grading, grain, sepia, big typography, and PARTIALLY TYPED text — ' +
-          'typewriter effects and karaoke captions reveal text progressively, so mid-word snapshots are normal.',
+          'typewriter effects and karaoke captions reveal text progressively, so mid-word snapshots are normal. ' +
+          'The "FontRollDecoder" scene specifically shows a hacker-style scramble-decode effect where letters ' +
+          'resolve left-to-right and unrevealed letters show random garbage characters (e.g. "AMBITX%EL" mid-reveal ' +
+          'of "AMBITION") — this is the intended effect, never flag it.',
       },
     ];
     for (const c of checkable) {

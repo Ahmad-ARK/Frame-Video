@@ -7,6 +7,7 @@
   "private": true,
   "dependencies": {
     "@anthropic-ai/sdk": "^0.109.0",
+    "@imgly/background-removal-node": "^1.4.5",
     "@remotion/bundler": "^4.0.484",
     "@remotion/cli": "4.0.484",
     "@remotion/google-fonts": "^4.0.484",
@@ -23,6 +24,7 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "remotion": "4.0.484",
+    "sharp": "^0.32.6",
     "tailwindcss": "4.0.0",
     "topojson-client": "^3.1.0",
     "world-atlas": "^2.0.2",

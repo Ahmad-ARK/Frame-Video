@@ -1,0 +1,119 @@
+
+> documentary-pipeline@1.0.0 run-pipeline
+> tsx pipeline/index.ts
+
+📦 1 topic(s) to process.
+
+=========== Video 1/1 ===========
+🎨 Theme: gold
+
+🎞️  "Cleopatra's Last Stand Against Rome" — 1 act(s), 7 scenes → cleopatra-s-last-stand-against-rome_1.mp4
+  [S1] ♻️  cached [HookTitle]
+  [S2] ♻️  cached [SplitScreen]
+  [S3] ♻️  cached [EditorialPaper]
+  [S4] ♻️  cached [Map]
+  [S5] ♻️  cached [CinematicFire]
+  [S6] ♻️  cached [KenBurns]
+  [S7] ♻️  cached [FontRollDecoder]
+🎵 Mood "epic" → music/epic.mp3
+
+🎬 Rendering cleopatra-s-last-stand-against-rome_1.mp4 (74.3s)...
+📦 Bundling Remotion project (once)...
+  render 0%  render 10%  render 20%  render 30%  render 40%  render 50%  render 60%  render 70%  render 80%  render 90%  render 100%
+✂️  Removing background for thumbnail subject...
+[40m http://localhost:3000/public/assets/cleopatra-s-last-stand-against-rome_1/thumb_cutout.png [49m [31mFailed to load resource: the server responded with a status of 404 (Not Found)[39m
+[40m Tab 0, node_modules/remotion/dist/esm/index.mjs:9856 [49m [33m[0mEncodingError: The source image cannot be decoded.[0m[39m
+[40m Tab 0, node_modules/remotion/dist/esm/index.mjs:9856 [49m [33m[0mEncodingError: The source image cannot be decoded.[0m[39m
+[40m Tab 0, node_modules/remotion/dist/esm/index.mjs:9805 [49m [33mCould not load image with source http://localhost:3000/public/assets/cleopatra-s-last-stand-against-rome_1/thumb_cutout.png, retrying again in 1000ms[39m
+[40m Tab 0, node_modules/remotion/dist/esm/index.mjs:9805 [49m [33mCould not load image with source http://localhost:3000/public/assets/cleopatra-s-last-stand-against-rome_1/thumb_cutout.png, retrying again in 1000ms[39m
+[40m http://localhost:3000/public/assets/cleopatra-s-last-stand-against-rome_1/thumb_cutout.png [49m [31mFailed to load resource: the server responded with a status of 404 (Not Found)[39m
+[40m Tab 0, node_modules/remotion/dist/esm/index.mjs:9805 [49m [33mCould not load image with source http://localhost:3000/public/assets/cleopatra-s-last-stand-against-rome_1/thumb_cutout.png, retrying again in 2000ms[39m
+[40m Tab 0, node_modules/remotion/dist/esm/index.mjs:9805 [49m [33mCould not load image with source http://localhost:3000/public/assets/cleopatra-s-last-stand-against-rome_1/thumb_cutout.png, retrying again in 2000ms[39m
+[40m http://localhost:3000/public/assets/cleopatra-s-last-stand-against-rome_1/thumb_cutout.png [49m [31mFailed to load resource: the server responded with a status of 404 (Not Found)[39m
+  thumbnail attempt 1 failed: Error: Error loading image with src: http://localhost:3000/public/assets/cleopatra-s-last-stand-agai — retrying...
+[40m http://localhost:3000/public/assets/cleopatra-s-last-stand-against-rome_1/thumb_cutout.png [49m [31mFailed to load resource: the server responded with a status of 404 (Not Found)[39m
+[40m Tab 0, node_modules/remotion/dist/esm/index.mjs:9856 [49m [33m[0mEncodingError: The source image cannot be decoded.[0m[39m
+[40m Tab 0, node_modules/remotion/dist/esm/index.mjs:9856 [49m [33m[0mEncodingError: The source image cannot be decoded.[0m[39m
+[40m Tab 0, node_modules/remotion/dist/esm/index.mjs:9805 [49m [33mCould not load image with source http://localhost:3000/public/assets/cleopatra-s-last-stand-against-rome_1/thumb_cutout.png, retrying again in 1000ms[39m
+[40m Tab 0, node_modules/remotion/dist/esm/index.mjs:9805 [49m [33mCould not load image with source http://localhost:3000/public/assets/cleopatra-s-last-stand-against-rome_1/thumb_cutout.png, retrying again in 1000ms[39m
+[40m http://localhost:3000/public/assets/cleopatra-s-last-stand-against-rome_1/thumb_cutout.png [49m [31mFailed to load resource: the server responded with a status of 404 (Not Found)[39m
+[40m Tab 0, node_modules/remotion/dist/esm/index.mjs:9805 [49m [33mCould not load image with source http://localhost:3000/public/assets/cleopatra-s-last-stand-against-rome_1/thumb_cutout.png, retrying again in 2000ms[39m
+[40m Tab 0, node_modules/remotion/dist/esm/index.mjs:9805 [49m [33mCould not load image with source http://localhost:3000/public/assets/cleopatra-s-last-stand-against-rome_1/thumb_cutout.png, retrying again in 2000ms[39m
+[40m http://localhost:3000/public/assets/cleopatra-s-last-stand-against-rome_1/thumb_cutout.png [49m [31mFailed to load resource: the server responded with a status of 404 (Not Found)[39m
+  thumbnail attempt 2 failed: Error: Error loading image with src: http://localhost:3000/public/assets/cleopatra-s-last-stand-agai — retrying...
+[40m http://localhost:3000/public/assets/cleopatra-s-last-stand-against-rome_1/thumb_cutout.png [49m [31mFailed to load resource: the server responded with a status of 404 (Not Found)[39m
+[40m Tab 0, node_modules/remotion/dist/esm/index.mjs:9856 [49m [33m[0mEncodingError: The source image cannot be decoded.[0m[39m
+[40m Tab 0, node_modules/remotion/dist/esm/index.mjs:9856 [49m [33m[0mEncodingError: The source image cannot be decoded.[0m[39m
+[40m Tab 0, node_modules/remotion/dist/esm/index.mjs:9805 [49m [33mCould not load image with source http://localhost:3000/public/assets/cleopatra-s-last-stand-against-rome_1/thumb_cutout.png, retrying again in 1000ms[39m
+[40m Tab 0, node_modules/remotion/dist/esm/index.mjs:9805 [49m [33mCould not load image with source http://localhost:3000/public/assets/cleopatra-s-last-stand-against-rome_1/thumb_cutout.png, retrying again in 1000ms[39m
+[40m http://localhost:3000/public/assets/cleopatra-s-last-stand-against-rome_1/thumb_cutout.png [49m [31mFailed to load resource: the server responded with a status of 404 (Not Found)[39m
+[40m Tab 0, node_modules/remotion/dist/esm/index.mjs:9805 [49m [33mCould not load image with source http://localhost:3000/public/assets/cleopatra-s-last-stand-against-rome_1/thumb_cutout.png, retrying again in 2000ms[39m
+[40m Tab 0, node_modules/remotion/dist/esm/index.mjs:9805 [49m [33mCould not load image with source http://localhost:3000/public/assets/cleopatra-s-last-stand-against-rome_1/thumb_cutout.png, retrying again in 2000ms[39m
+[40m http://localhost:3000/public/assets/cleopatra-s-last-stand-against-rome_1/thumb_cutout.png [49m [31mFailed to load resource: the server responded with a status of 404 (Not Found)[39m
+  thumbnail attempt 3 failed: Error: Error loading image with src: http://localhost:3000/public/assets/cleopatra-s-last-stand-agai — retrying...
+❌ Video 1 failed: Error: Error loading image with src: http://localhost:3000/public/assets/cleopatra-s-last-stand-against-rome_1/thumb_cutout.png
+    at cancelRenderInternal (http://localhost:3000/bundle.js:26557:13)
+    at http://localhost:3000/bundle.js:26785:12
+    at http://localhost:3000/bundle.js:35448:7
+    at processDispatchQueue (http://localhost:3000/bundle.js:20302:13)
+    at http://localhost:3000/bundle.js:20852:5
+    at batchedUpdates$1 (http://localhost:3000/bundle.js:9483:36)
+    at dispatchEventForPluginEventSystem (http://localhost:3000/bundle.js:20440:3)
+    at dispatchEvent (http://localhost:3000/bundle.js:23291:7) {
+  stackFrame: [
+    {
+      columnNumber: 13,
+      fileName: 'http://localhost:3000/bundle.js',
+      functionName: 'cancelRenderInternal',
+      lineNumber: 26557
+    },
+    {
+      columnNumber: 12,
+      fileName: 'http://localhost:3000/bundle.js',
+      functionName: null,
+      lineNumber: 26785
+    },
+    {
+      columnNumber: 7,
+      fileName: 'http://localhost:3000/bundle.js',
+      functionName: null,
+      lineNumber: 35448
+    },
+    {
+      columnNumber: 13,
+      fileName: 'http://localhost:3000/bundle.js',
+      functionName: 'processDispatchQueue',
+      lineNumber: 20302
+    },
+    {
+      columnNumber: 5,
+      fileName: 'http://localhost:3000/bundle.js',
+      functionName: null,
+      lineNumber: 20852
+    },
+    {
+      columnNumber: 36,
+      fileName: 'http://localhost:3000/bundle.js',
+      functionName: 'batchedUpdates$1',
+      lineNumber: 9483
+    },
+    {
+      columnNumber: 3,
+      fileName: 'http://localhost:3000/bundle.js',
+      functionName: 'dispatchEventForPluginEventSystem',
+      lineNumber: 20440
+    },
+    {
+      columnNumber: 7,
+      fileName: 'http://localhost:3000/bundle.js',
+      functionName: 'dispatchEvent',
+      lineNumber: 23291
+    }
+  ],
+  delayRenderCall: null,
+  frame: null,
+  chunk: null,
+  name: 'CancelledError'
+}
+
+⚠️ Done with failures: Video 1

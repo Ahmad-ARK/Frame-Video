@@ -12,9 +12,17 @@ const MoodSchema = z
   .enum(['somber', 'epic', 'tense', 'curious', 'uplifting'])
   .describe('overall emotional register of the video — drives the background music choice');
 
+const ThumbTextSchema = z
+  .string()
+  .describe(
+    'Thumbnail hook text, 2-4 words, UPPERCASE, a curiosity punch distinct from the title — ' +
+      'e.g. "NEVER FOUND", "THEY LIED", "300 DIED". This is what viewers see on the thumbnail, not the title.',
+  );
+
 export const ScriptSchema = z.object({
   title: z.string().describe('Video title, max 8 words'),
   mood: MoodSchema,
+  thumbText: ThumbTextSchema,
   beats: z.array(BeatSchema).min(3).max(8).describe('Story beats. Beat 1 is the cold-open hook.'),
 });
 
@@ -22,6 +30,7 @@ export const ScriptSchema = z.object({
 export const LongScriptSchema = z.object({
   title: z.string().describe('Video title, max 8 words'),
   mood: MoodSchema,
+  thumbText: ThumbTextSchema,
   acts: z
     .array(
       z.object({
@@ -37,6 +46,7 @@ export const LongScriptSchema = z.object({
 export interface Script {
   title: string;
   mood?: string;
+  thumbText?: string;
   acts: { title?: string; beats: { narration: string }[] }[];
 }
 
@@ -132,6 +142,25 @@ export const ScenePlanSchema = z.discriminatedUnion('component', [
       .max(6)
       .describe('kinetic words forming one complete thought, ideally words spoken in the narration'),
   }),
+  z.object({ component: z.literal('ParallaxDeep'), ...common }),
+  z.object({
+    component: z.literal('TitleParallax'),
+    ...common,
+    title: z.string().describe('max 4 words'),
+    kicker: z.string().optional().describe('max 3 words, uppercase'),
+  }),
+  z.object({ component: z.literal('PhotoCarousel3D'), ...common }),
+  z.object({
+    component: z.literal('DocumentRig'),
+    ...common,
+    docTitle: z.string().describe('max 4 words'),
+    stampText: z.string().optional().describe('max 2 words, uppercase (e.g. "CLASSIFIED", "GUILTY")'),
+  }),
+  z.object({
+    component: z.literal('CubeReveal'),
+    ...common,
+    faceLabels: z.tuple([z.string(), z.string()]).describe('max 3 words each, e.g. ["BEFORE", "AFTER"]'),
+  }),
   z.object({
     component: z.literal('SocialJustice'),
     ...common,
@@ -146,7 +175,10 @@ export const ScenePlanSchema = z.discriminatedUnion('component', [
 ]);
 export type ScenePlan = z.infer<typeof ScenePlanSchema>;
 
-export const PlanSchema = z.object({ scenes: z.array(ScenePlanSchema).min(3).max(8) });
+// min(1): a short VERBATIM paragraph can be a single-beat act, and a chunk of
+// an oversized act is planned on its own — both may legitimately yield <3 scenes.
+// The AI-written path still produces >=3 scenes (its script schema enforces >=3 beats).
+export const PlanSchema = z.object({ scenes: z.array(ScenePlanSchema).min(1).max(8) });
 export type Plan = z.infer<typeof PlanSchema>;
 
 // ---------- Assets ----------
@@ -165,6 +197,8 @@ export interface AssetCandidate {
   focal?: { x: number; y: number };
   /** overall brightness, set by vision verification — drives adaptive grading */
   tone?: 'bright' | 'mid' | 'dark';
+  /** what the focal point actually is — lets the thumbnail pick a cutout-worthy subject */
+  subject?: 'person' | 'object' | 'scene';
 }
 
 export interface Credit {
@@ -181,6 +215,7 @@ export interface ResolvedImage {
   query: string;
   focal?: { x: number; y: number };
   tone?: 'bright' | 'mid' | 'dark';
+  subject?: 'person' | 'object' | 'scene';
 }
 
 // ---------- Final props consumed by Remotion ----------
@@ -196,6 +231,27 @@ export interface ResolvedCue {
   action: 'popText' | 'popImage';
   text?: string;
   image?: string; // path relative to public/
+  // provenance for popImage cues (review UI + credits rebuild)
+  query?: string;
+  provider?: string;
+  author?: string;
+  license?: string;
+  sourceUrl?: string;
+  title?: string;
+}
+
+/** Per-image provenance, kept alongside `images: string[]` so the review UI
+ * can show/edit what produced each slot and credits can be rebuilt after edits. */
+export interface ImageMeta {
+  query: string;
+  provider: string;
+  author?: string;
+  license?: string;
+  sourceUrl?: string;
+  title?: string;
+  tone?: 'bright' | 'mid' | 'dark' | null;
+  focal?: { x: number; y: number } | null;
+  subject?: 'person' | 'object' | 'scene' | null;
 }
 
 export interface RenderScene {

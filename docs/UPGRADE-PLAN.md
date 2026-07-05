@@ -5,6 +5,88 @@ session. Follow the GROUND RULES for every part. Do the parts in order
 (Part 2 and 3 both benefit from Part 1's per-image metadata refactor;
 Part 3's ParallaxDeep benefits from Part 2's background-removal module).
 
+## STATUS (2026-07-04)
+
+- **Part 1 — DONE.** `pipeline/review.ts` + `pipeline/review-page.ts` +
+  `ImageMeta` type + `rebuildCreditsFromScenes()`. `--review` flag. Verified
+  live: state/img/refetch/upload/path-traversal-blocked/sequential-port-reuse.
+- **Part 2 — DONE.** `thumbText` in script schema, `subject` tag added to the
+  vision-verify call, `pipeline/thumbnail/cutout.ts` (background removal),
+  3 layouts in `src/Thumbnail.tsx`, `--thumbs=all` flag. Verified with real
+  renders across all 3 layouts × all 3 themes, and at 320px for readability.
+  **Two real bugs found and fixed during verification** (both in
+  `pipeline/thumbnail/cutout.ts`): (1) an absolute Windows path like
+  `C:\Users\...` gets misparsed as a URL with scheme `c:` by the library —
+  fixed by reading the file and passing bytes; (2) raw bytes alone have no
+  MIME type for the library's internal decoder — fixed by wrapping in a
+  `Blob` with an explicit `type`. (3) the library's own PNG output sometimes
+  comes back as color-type-3 (indexed/palette) instead of RGBA — Chrome's
+  headless `<img>` decoder rejects this outright with "EncodingError: The
+  source image cannot be decoded" even though ffprobe/most viewers read the
+  file fine. Fixed by re-encoding through **ffmpeg as a subprocess**
+  (`-pix_fmt rgba`) — NOT by calling `sharp` in-process (that segfaults right
+  after the ONNX-based `removeBackground()` call, a native-library conflict).
+  Also fixed a flex-stretch bug where the "DOCUMENTARY" kicker chip filled
+  the full column width in the `split` layout (needed a plain-block wrapper
+  div, since flex items ignore `display: inline-block` sizing).
+- **Part 3 — 5 of 5 scenes DONE.** `ParallaxDeep`, `TitleParallax`,
+  `PhotoCarousel3D`, `DocumentRig`, `CubeReveal` all built, registered
+  everywhere (schema/planner/Root/showcase/index.ts imagesNeeded), and
+  verified with real headless-Chrome stills across all 3 themes via
+  `themecheck.ts` — confirmed NOT flattened (the CSS 3D gotcha documented
+  below did not bite anywhere because no `overflow`/`filter` was placed on
+  any perspective/preserve-3d chain). `src/scenes/DustLayer.tsx` extracted
+  from HookTitle as planned, reused by ParallaxDeep and TitleParallax.
+  `TitleParallax` also replaces `ChapterCard` as the live act-divider
+  (`ChapterCard` stays registered for legacy compat, per the plan).
+  **One real bug found and fixed during verification**: `CubeReveal`'s
+  `perspective: 1600` was far too small relative to its `translateZ(radius)`
+  where `radius = width/2 = 960` (necessary so adjoining cube faces meet
+  edge-to-edge with no gap) — this gave a magnification of
+  `1600/(1600-960) ≈ 2.5x`, an unrecognizable extreme close-up with no
+  visible cube corner. Fixed by scaling `perspective` to `width * 4`
+  (≈14% magnification, subtle). Note: a separate visual oddity (one cube
+  face showing a very tight, steeply-angled crop) turned out NOT to be a
+  bug — it was the showcase demo reusing a source stock photo that was
+  itself shot at that raking angle; confirmed by viewing the raw source
+  file directly. Don't rediagnose that as a CubeReveal defect if seen again
+  with different demo images.
+- **Two more real bugs found and fixed during final E2E verification,
+  both general-purpose (not confined to thumbnails):**
+  1. **Stale bundled `public/` copy.** `@remotion/bundler`'s `bundle()`
+     copies `public/` into its own output dir ONCE per process and that
+     copy is frozen (`symlinkPublicDir` is disabled on Windows). Any file
+     written after the first bundle — a thumbnail cutout, a QA-repair
+     image, or (much worse, latent) every scene image for the 2nd+ video
+     in a multi-topic batch — physically doesn't exist in that copy and
+     404s, surfacing as a confusing `EncodingError: The source image
+     cannot be decoded`. Fixed with `syncPublicFileToBundle()` in
+     `pipeline/render.ts`, called before every `renderVideo`/
+     `renderThumbnail` call site in `pipeline/index.ts` (main render,
+     Shorts, QA-repair re-render, and the standalone `rerender()` path).
+     Verified via a real `--rerender` run: cutout + thumbnail regenerated
+     cleanly with no decode error.
+  2. **Image-download counter race condition** (found because that same
+     verification run produced a thumbnail with visibly wrong content —
+     a portrait's metadata pointing at a photo of a tomb entrance).
+     `produceVideo` processes scenes with `mapPool(flatPlans, 3, ...)` —
+     3 scenes resolve images concurrently, sharing one mutable `counter`
+     object by reference. `resolveImages` in `pipeline/assets/resolve.ts`
+     read `counter.n` for the filename, `await`ed the download, and only
+     incremented `counter.n` afterward — so two concurrent scenes could
+     read the same number before either incremented, both download to
+     `img_N.<ext>`, and the slower one silently overwrites the faster
+     one's file while both scenes keep their own (now mismatched)
+     `imageMeta`/credit. This corrupted real video content, not just
+     thumbnails, any time two scenes' downloads happened to overlap.
+     Fixed by reserving `const n = counter.n++` synchronously, before the
+     `await`, in both the vision-verified-candidate path and the FLUX
+     fallback path. Verified with a standalone regression script that
+     fires 3 concurrent `resolveImages` calls sharing one counter
+     (mirroring `mapPool`'s concurrency) against 3 different queries —
+     confirmed 3 unique filenames with correctly matching content, no
+     collisions. Script was scratch-only and deleted after verifying.
+
 ---
 
 ## GROUND RULES (apply to every part)

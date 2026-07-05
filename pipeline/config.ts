@@ -16,7 +16,7 @@ export const MAX_SECONDS_PER_IMAGE = 4;
 /** Seconds of the credits end card. */
 export const CREDITS_SECONDS = 4;
 
-export const SCENE_MODEL = process.env.SCENE_MODEL || 'claude-sonnet-4-6';
+export const SCENE_MODEL = process.env.SCENE_MODEL || 'claude-sonnet-5';
 export const VISION_MODEL = process.env.VISION_MODEL || 'claude-haiku-4-5-20251001';
 
 export const TTS_VOICE = process.env.TTS_VOICE || 'en-US-GuyNeural';

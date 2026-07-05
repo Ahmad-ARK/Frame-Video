@@ -1,6 +1,6 @@
 import { anthropic } from '../llm';
 import { VISION_MODEL } from '../config';
-import { httpClient } from './providers';
+import { httpClient, UA, withFetchSlot } from './providers';
 import type { AssetCandidate } from '../types';
 
 type ImageBlock = {
@@ -9,25 +9,34 @@ type ImageBlock = {
 };
 
 async function fetchThumb(url: string): Promise<ImageBlock | null> {
-  try {
-    const res = await httpClient.get(url, {
-      responseType: 'arraybuffer',
-      timeout: 20_000,
-      maxContentLength: 4 * 1024 * 1024,
-      headers: { 'User-Agent': 'documentary-pipeline/1.0' },
-    });
-    const ct = String(res.headers['content-type'] ?? '');
-    const media = ct.includes('png')
-      ? 'image/png'
-      : ct.includes('webp')
-        ? 'image/webp'
-        : ct.includes('gif')
-          ? 'image/gif'
-          : 'image/jpeg';
-    return { type: 'image', source: { type: 'base64', media_type: media, data: Buffer.from(res.data).toString('base64') } };
-  } catch {
-    return null;
+  // compliant UA + retry: without these, one Wikimedia throttle made every
+  // thumbnail unfetchable → "vision verify skipped" → unverified images
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await withFetchSlot(() =>
+        httpClient.get(url, {
+          responseType: 'arraybuffer',
+          timeout: 20_000,
+          maxContentLength: 4 * 1024 * 1024,
+          headers: { 'User-Agent': UA },
+        }),
+      );
+      const ct = String(res.headers['content-type'] ?? '');
+      const media = ct.includes('png')
+        ? 'image/png'
+        : ct.includes('webp')
+          ? 'image/webp'
+          : ct.includes('gif')
+            ? 'image/gif'
+            : 'image/jpeg';
+      return { type: 'image', source: { type: 'base64', media_type: media, data: Buffer.from(res.data).toString('base64') } };
+    } catch (err) {
+      if (attempt === 2) return null;
+      const status = (err as { response?: { status?: number } }).response?.status;
+      await new Promise((r) => setTimeout(r, (status === 429 ? 2000 : 700) * (attempt + 1)));
+    }
   }
+  return null;
 }
 
 export interface VerifyResult {
@@ -37,6 +46,8 @@ export interface VerifyResult {
   focals: Record<number, { x: number; y: number }>;
   /** Brightness per accepted candidate index — lets the theme grade adapt per image. */
   tones: Record<number, 'bright' | 'mid' | 'dark'>;
+  /** What the focal point actually is — lets the thumbnail pick a cutout-worthy subject. */
+  subjects: Record<number, 'person' | 'object' | 'scene'>;
 }
 
 /**
@@ -57,7 +68,7 @@ export async function verifyCandidates(
     // thumbnails unreachable (network hiccup) — fail open to score order
     // rather than starving the scene of images entirely
     console.warn(`  vision verify skipped for "${query}" (no thumbnails downloadable)`);
-    return { ranked: candidates.map((_, i) => i), focals: {}, tones: {} };
+    return { ranked: candidates.map((_, i) => i), focals: {}, tones: {}, subjects: {} };
   }
 
   const content: any[] = [
@@ -80,8 +91,12 @@ export async function verifyCandidates(
       'Which candidates genuinely depict the requirement and would look good full-screen in a documentary? ' +
       'Reject: book covers, text pages, logos, diagrams-with-tiny-text, watermarked images, irrelevant subjects. ' +
       'For each acceptable candidate also give the focal point — where the main subject (face/object of interest) sits — ' +
-      'as fractions of image width and height from the top-left, plus its overall brightness ("bright", "mid" or "dark"). ' +
-      'Reply with ONLY JSON: {"acceptable": [<candidate numbers, best first>], "focus": {"<number>": [x, y]}, "tones": {"<number>": "bright"|"mid"|"dark"}} — empty acceptable array if none are usable.',
+      'as fractions of image width and height from the top-left, its overall brightness ("bright", "mid" or "dark"), ' +
+      'and what that focal subject IS: "person" (a human figure/face is the main subject — good for a cutout), ' +
+      '"object" (a distinct artifact/item is the main subject — also cutout-able), or "scene" (a landscape/wide shot with ' +
+      'no single isolatable subject). ' +
+      'Reply with ONLY JSON: {"acceptable": [<candidate numbers, best first>], "focus": {"<number>": [x, y]}, ' +
+      '"tones": {"<number>": "bright"|"mid"|"dark"}, "subjects": {"<number>": "person"|"object"|"scene"}} — empty acceptable array if none are usable.',
   });
 
   try {
@@ -93,7 +108,7 @@ export async function verifyCandidates(
     const text = msg.content.find((b) => b.type === 'text');
     const raw = text && text.type === 'text' ? text.text : '';
     const match = raw.match(/\{[\s\S]*\}/);
-    if (!match) return { ranked: [], focals: {}, tones: {} };
+    if (!match) return { ranked: [], focals: {}, tones: {}, subjects: {} };
     const parsed = JSON.parse(match[0]);
     const nums: number[] = Array.isArray(parsed.acceptable) ? parsed.acceptable : [];
     const ranked = nums
@@ -116,10 +131,17 @@ export async function verifyCandidates(
         tones[origIdx] = tone;
       }
     }
-    return { ranked, focals, tones };
+    const subjects: Record<number, 'person' | 'object' | 'scene'> = {};
+    for (const [num, subject] of Object.entries(parsed.subjects ?? {})) {
+      const origIdx = usable[Number(num) - 1]?.idx;
+      if (origIdx !== undefined && (subject === 'person' || subject === 'object' || subject === 'scene')) {
+        subjects[origIdx] = subject;
+      }
+    }
+    return { ranked, focals, tones, subjects };
   } catch (err) {
     console.warn(`  vision verify failed for "${query}": ${(err as Error).message}`);
     // fail open: keep score order rather than blocking the pipeline
-    return { ranked: usable.map((u) => u.idx), focals: {}, tones: {} };
+    return { ranked: usable.map((u) => u.idx), focals: {}, tones: {}, subjects: {} };
   }
 }

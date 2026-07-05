@@ -41,9 +41,17 @@ export const Timeline: React.FC<{
       : null;
   const activationFrame = (i: number) => (synced ? synced[i] : 10 + posOf(i) * (durationInFrames - 25));
 
-  // the bar reaches each dot exactly when its year is spoken
+  // the bar reaches each dot exactly when its year is spoken. The lead-in guard
+  // equals synced[0] when the first year is spoken at frame 0 (both become 0),
+  // which makes interpolate throw ("inputRange must be strictly monotonically
+  // increasing but got [0,0,...]"). Force the whole range strictly increasing.
+  const rawInput = synced ? [Math.max(0, synced[0] - 15), ...synced, durationInFrames - 10] : [];
+  const strictInput: number[] = [];
+  for (const v of rawInput) {
+    strictInput.push(strictInput.length === 0 ? v : Math.max(v, strictInput[strictInput.length - 1] + 1));
+  }
   const progress = synced
-    ? interpolate(frame, [Math.max(0, synced[0] - 15), ...synced, durationInFrames - 10], [0, ...events.map((_, i) => posOf(i)), 1], {
+    ? interpolate(frame, strictInput, [0, ...events.map((_, i) => posOf(i)), 1], {
         extrapolateLeft: 'clamp',
         extrapolateRight: 'clamp',
       })

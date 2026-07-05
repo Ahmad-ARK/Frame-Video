@@ -1,26 +1,35 @@
 import fs from 'fs';
 import path from 'path';
-import { providerCascade, scoreCandidate, httpClient } from './providers';
+import { providerCascade, scoreCandidate, httpClient, UA, withFetchSlot } from './providers';
 import { verifyCandidates } from './verify';
 import { generateFluxImage, fluxAvailable } from './flux';
 import type { AssetCandidate, ImageQuery, ResolvedImage } from '../types';
 
 async function downloadImage(url: string, destNoExt: string): Promise<string | null> {
-  try {
-    const res = await httpClient.get(url, {
-      responseType: 'arraybuffer',
-      timeout: 60_000,
-      maxContentLength: 30 * 1024 * 1024,
-      headers: { 'User-Agent': 'documentary-pipeline/1.0', Referer: url },
-    });
-    const ct = String(res.headers['content-type'] ?? '');
-    const ext = ct.includes('png') ? 'png' : ct.includes('webp') ? 'webp' : 'jpg';
-    const file = `${destNoExt}.${ext}`;
-    fs.writeFileSync(file, Buffer.from(res.data));
-    return file;
-  } catch {
-    return null;
+  // retry with backoff — a single throttle (429) or transient reset used to be a
+  // permanent loss, collapsing the whole entity-image tier to FLUX on big jobs
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await withFetchSlot(() =>
+        httpClient.get(url, {
+          responseType: 'arraybuffer',
+          timeout: 60_000,
+          maxContentLength: 30 * 1024 * 1024,
+          headers: { 'User-Agent': UA, Referer: url },
+        }),
+      );
+      const ct = String(res.headers['content-type'] ?? '');
+      const ext = ct.includes('png') ? 'png' : ct.includes('webp') ? 'webp' : 'jpg';
+      const file = `${destNoExt}.${ext}`;
+      fs.writeFileSync(file, Buffer.from(res.data));
+      return file;
+    } catch (err) {
+      if (attempt === 2) return null;
+      const status = (err as { response?: { status?: number } }).response?.status;
+      await new Promise((r) => setTimeout(r, (status === 429 ? 2500 : 900) * (attempt + 1)));
+    }
   }
+  return null;
 }
 
 /**
@@ -59,10 +68,15 @@ export async function resolveImages(opts: {
         for (const search of providerCascade(q.kind)) {
           const found = (await search(variant)).filter((c) => !usedUrls.has(c.fullUrl));
           if (found.length === 0) continue;
-          const top = found.sort((a, b) => scoreCandidate(b) - scoreCandidate(a)).slice(0, 4);
+          const top = found.sort((a, b) => scoreCandidate(b) - scoreCandidate(a)).slice(0, 2);
           if (fallback.length === 0) fallback.push(...top);
-          const { ranked, focals, tones } = await verifyCandidates(q.query, narration, top);
-          if (ranked.length > 0) return { ranked: ranked.map((i) => ({ ...top[i], focal: focals[i], tone: tones[i] })), fallback };
+          // broll is generic stock footage/texture — score order is reliable enough that
+          // a vision call just burns cost without meaningfully improving the pick. Reserve
+          // the vision check for "entity" queries, where mismatches (wrong person/place) matter.
+          if (q.kind !== 'entity') return { ranked: top, fallback };
+          const { ranked, focals, tones, subjects } = await verifyCandidates(q.query, narration, top);
+          if (ranked.length > 0)
+            return { ranked: ranked.map((i) => ({ ...top[i], focal: focals[i], tone: tones[i], subject: subjects[i] })), fallback };
           console.warn(`  ✗ all ${top.length} ${top[0].provider} candidates rejected for "${variant}"`);
         }
         if (variant !== variants[variants.length - 1]) {
@@ -87,18 +101,22 @@ export async function resolveImages(opts: {
         while (pool.length > 0 && !resolved) {
           const cand = pool.shift()!;
           if (usedUrls.has(cand.fullUrl)) continue;
-          const file = await downloadImage(cand.fullUrl, path.join(destDirAbs, `img_${counter.n}`));
+          // reserve the slot synchronously — scenes download concurrently (mapPool)
+          // and share this counter by reference; incrementing only after the await
+          // let two scenes race for the same number and overwrite each other's file
+          const n = counter.n++;
+          const file = await downloadImage(cand.fullUrl, path.join(destDirAbs, `img_${n}`));
           if (!file) {
             console.warn(`  ✗ download failed: ${cand.fullUrl.slice(0, 90)}`);
             continue;
           }
           usedUrls.add(cand.fullUrl);
-          counter.n++;
           resolved = {
             file: `${publicRel}/${path.basename(file)}`,
             query: query.query,
             focal: cand.focal,
             tone: cand.tone,
+            subject: cand.subject,
             credit: {
               provider: cand.provider,
               author: cand.author,
@@ -117,9 +135,9 @@ export async function resolveImages(opts: {
 
     // 2) AI generation
     if (!resolved && fluxAvailable()) {
-      const file = path.join(destDirAbs, `img_${counter.n}.png`);
+      const n = counter.n++; // reserve synchronously — see race-condition note above
+      const file = path.join(destDirAbs, `img_${n}.png`);
       if (await generateFluxImage(query.query, narration, file, fluxStyle)) {
-        counter.n++;
         resolved = {
           file: `${publicRel}/${path.basename(file)}`,
           query: query.query,

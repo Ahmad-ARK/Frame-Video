@@ -4,13 +4,40 @@ import https from 'https';
 import { KEYS } from '../config';
 import type { AssetCandidate } from '../types';
 
-const UA = 'documentary-pipeline/1.0 (personal project; contact: ahmadkhalid236997@gmail.com)';
+// Wikimedia enforces a User-Agent policy (contact info required) and rate-limits
+// bursts — a bare UA gets 403/429. Every request (search AND image bytes) uses this.
+export const UA = 'documentary-pipeline/1.0 (personal project; contact: ahmadkhalid236997@gmail.com)';
 
 // keep-alive: reuse connections → far fewer DNS lookups (flaky on Windows)
 export const httpClient = axios.create({
   httpAgent: new http.Agent({ keepAlive: true }),
   httpsAgent: new https.Agent({ keepAlive: true }),
 });
+
+/**
+ * Global cap on concurrent image byte-fetches (thumbnails + full images). A
+ * large multi-scene job otherwise fires hundreds of near-simultaneous requests
+ * at upload.wikimedia.org, tripping its rate limiter (429 / connection reset);
+ * spacing them keeps downloads under the limit. Slots are handed directly to
+ * waiters so the count can never exceed MAX.
+ */
+const MAX_CONCURRENT_FETCHES = 4;
+let activeFetches = 0;
+const fetchWaiters: (() => void)[] = [];
+export async function withFetchSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (activeFetches < MAX_CONCURRENT_FETCHES) {
+    activeFetches++;
+  } else {
+    await new Promise<void>((resolve) => fetchWaiters.push(resolve)); // slot handed over on release
+  }
+  try {
+    return await fn();
+  } finally {
+    const next = fetchWaiters.shift();
+    if (next) next(); // pass our slot to the next waiter — activeFetches unchanged
+    else activeFetches--;
+  }
+}
 
 async function getJson(url: string, headers: Record<string, string> = {}): Promise<any> {
   let lastErr: unknown;

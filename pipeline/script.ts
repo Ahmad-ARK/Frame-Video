@@ -17,12 +17,28 @@ const RULES =
 export async function writeScript(topic: string, research = '', targetWords = TARGET_SCRIPT_WORDS): Promise<Script> {
   if (topic.trim().toUpperCase().startsWith('VERBATIM:')) {
     const text = topic.trim().slice('VERBATIM:'.length).trim();
-    const sentences = text.match(/[^.!?]+[.!?]+/g) ?? [text];
-    const beats: { narration: string }[] = [];
-    for (let i = 0; i < sentences.length; i += 2) {
-      beats.push({ narration: sentences.slice(i, i + 2).join(' ').trim() });
-    }
-    return { title: text.split(/\s+/).slice(0, 6).join(' '), mood: 'curious', acts: [{ beats }] };
+    // Blank lines are act boundaries — the author controls where act dividers
+    // land. Within a paragraph, sentences are grouped 2-per-beat. A script with
+    // no blank line stays a single act (no dividers), preserving old behaviour.
+    const toBeats = (para: string) => {
+      const clean = para.replace(/\s+/g, ' ').trim();
+      const sentences = clean.match(/[^.!?]+[.!?]+/g) ?? [clean];
+      const beats: { narration: string }[] = [];
+      for (let i = 0; i < sentences.length; i += 2) {
+        beats.push({ narration: sentences.slice(i, i + 2).join(' ').trim() });
+      }
+      return beats;
+    };
+    const acts = text
+      .split(/\n\s*\n/)
+      .map((para) => ({ beats: toBeats(para) }))
+      .filter((a) => a.beats.length > 0);
+    return {
+      title: text.replace(/\s+/g, ' ').split(' ').slice(0, 6).join(' '),
+      mood: 'curious',
+      thumbText: undefined,
+      acts: acts.length > 0 ? acts : [{ beats: toBeats(text) }],
+    };
   }
 
   const referenceBlock = research
@@ -47,7 +63,7 @@ export async function writeScript(topic: string, research = '', targetWords = TA
         RULES +
         `\n- End with a resonant closing line, not a summary.`,
     });
-    return { title: script.title, mood: script.mood, acts: [{ beats: script.beats }] };
+    return { title: script.title, mood: script.mood, thumbText: script.thumbText, acts: [{ beats: script.beats }] };
   }
 
   const actCount = Math.min(6, Math.max(2, Math.round(targetWords / 220)));
@@ -66,5 +82,5 @@ export async function writeScript(topic: string, research = '', targetWords = TA
       RULES +
       `\n- The final act ends with a resonant closing line, not a summary.`,
   });
-  return { title: script.title, mood: script.mood, acts: script.acts };
+  return { title: script.title, mood: script.mood, thumbText: script.thumbText, acts: script.acts };
 }

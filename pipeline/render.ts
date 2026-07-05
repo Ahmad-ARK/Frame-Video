@@ -1,13 +1,27 @@
+import fs from 'fs';
 import path from 'path';
 import { bundle } from '@remotion/bundler';
 import { renderMedia, renderStill, selectComposition } from '@remotion/renderer';
 import { enableTailwind } from '@remotion/tailwind-v4';
-import { ROOT } from './config';
+import { ROOT, PUBLIC_DIR } from './config';
 
 
 let bundleUrlPromise: Promise<string> | null = null;
 
-/** Bundle the Remotion project once per process; reuse across videos. */
+/**
+ * Bundle the Remotion project once per process; reuse across videos.
+ *
+ * IMPORTANT: `bundle()` COPIES `public/` into the bundle's own output
+ * directory ONE TIME (its return value, despite being passed around as
+ * `serveUrl`, is actually that output directory's filesystem path — Windows
+ * can't use the `symlinkPublicDir` option that would otherwise keep it live).
+ * Any file written to the source `public/` after this first call — a
+ * thumbnail cutout generated post-render, a QA-repaired image — physically
+ * does not exist in the copy and 404s when a later render requests it
+ * (surfacing as a confusing "EncodingError: The source image cannot be
+ * decoded", since the 404 body isn't image data). Call `syncPublicFileToBundle`
+ * for any such file before the render that needs to see it.
+ */
 function getBundle(): Promise<string> {
   if (!bundleUrlPromise) {
     console.log('📦 Bundling Remotion project (once)...');
@@ -17,6 +31,24 @@ function getBundle(): Promise<string> {
     });
   }
   return bundleUrlPromise;
+}
+
+/** Mirror a file (or every file in a directory) from the live `public/` into the already-bundled copy. See `getBundle` for why this is necessary. */
+export async function syncPublicFileToBundle(relPath: string): Promise<void> {
+  if (!bundleUrlPromise) return; // nothing bundled yet — the upcoming bundle will pick it up fresh
+  const bundleOutDir = await bundleUrlPromise;
+  const src = path.join(PUBLIC_DIR, relPath);
+  const dest = path.join(bundleOutDir, 'public', relPath);
+  if (!fs.existsSync(src)) return;
+  if (fs.statSync(src).isDirectory()) {
+    fs.mkdirSync(dest, { recursive: true });
+    for (const entry of fs.readdirSync(src)) {
+      await syncPublicFileToBundle(path.join(relPath, entry));
+    }
+    return;
+  }
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.copyFileSync(src, dest);
 }
 
 export async function renderVideo(
@@ -57,7 +89,17 @@ export async function renderVideo(
   throw lastErr;
 }
 
-export async function renderThumbnail(props: { title: string; image: string; theme?: string }, outputLocation: string): Promise<void> {
+export interface ThumbnailRenderProps {
+  title: string;
+  image: string;
+  theme?: string;
+  thumbText?: string;
+  cutout?: string;
+  layout?: 'subject' | 'split' | 'full';
+  [key: string]: unknown;
+}
+
+export async function renderThumbnail(props: ThumbnailRenderProps, outputLocation: string): Promise<void> {
   const serveUrl = await getBundle();
   // transient DNS/browser failures (e.g. fonts.gstatic.com not resolving) — retry
   let lastErr: unknown;
