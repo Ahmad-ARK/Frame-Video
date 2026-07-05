@@ -3,7 +3,10 @@ import path from 'path';
 import { bundle } from '@remotion/bundler';
 import { renderMedia, renderStill, selectComposition } from '@remotion/renderer';
 import { enableTailwind } from '@remotion/tailwind-v4';
-import { ROOT, PUBLIC_DIR } from './config';
+import { ROOT, PUBLIC_DIR, RENDER_CONCURRENCY, RENDER_GL } from './config';
+
+// GPU-accelerate the blur/3D CSS filters that dominate per-frame render cost.
+const chromiumOptions = { gl: RENDER_GL as 'angle' | 'swiftshader' | 'egl' | 'vulkan' };
 
 
 let bundleUrlPromise: Promise<string> | null = null;
@@ -57,6 +60,7 @@ export async function renderVideo(
   compositionId: 'Main' | 'Shorts' = 'Main',
 ): Promise<void> {
   const serveUrl = await getBundle();
+  if (compositionId === 'Main') console.log(`  ⚙️  render: ${RENDER_CONCURRENCY} workers, GPU=${RENDER_GL}`);
 
   // headless-Chrome startup occasionally times out on Windows — retry once
   let lastErr: unknown;
@@ -70,6 +74,8 @@ export async function renderVideo(
         codec: 'h264',
         outputLocation,
         inputProps: props,
+        concurrency: RENDER_CONCURRENCY, // #1 parallel workers
+        chromiumOptions, // #2 GPU
         onProgress: ({ progress }) => {
           const pct = Math.floor(progress * 100);
           if (pct >= lastLogged + 10) {
@@ -106,7 +112,7 @@ export async function renderThumbnail(props: ThumbnailRenderProps, outputLocatio
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const composition = await selectComposition({ serveUrl, id: 'Thumbnail', inputProps: props });
-      await renderStill({ serveUrl, composition, output: outputLocation, inputProps: props });
+      await renderStill({ serveUrl, composition, output: outputLocation, inputProps: props, chromiumOptions });
       return;
     } catch (err) {
       lastErr = err;

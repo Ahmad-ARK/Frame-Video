@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import path from 'path';
+import os from 'os';
 
 export const ROOT = path.resolve(__dirname, '..');
 export const PUBLIC_DIR = path.join(ROOT, 'public');
@@ -55,3 +56,16 @@ export const KEYS = {
 
 export const FLUX_ENDPOINT =
   process.env.FLUX_ENDPOINT || 'https://ahmadkhalid236997--flux-api-model-web.modal.run';
+
+// ---------- Render performance ----------
+// #1 Concurrency: parallel headless-Chrome workers. Remotion defaults to ~50% of
+// cores; using all logical cores roughly doubles throughput when RAM allows.
+// Each worker is a Chrome tab (~0.3-0.8 GB on blur/3D-heavy scenes) — if the
+// machine starts swapping or crashing, set RENDER_CONCURRENCY lower (e.g. half).
+export const RENDER_CONCURRENCY = process.env.RENDER_CONCURRENCY
+  ? Math.max(1, Number(process.env.RENDER_CONCURRENCY))
+  : Math.max(1, os.cpus().length);
+// #2 GPU: 'angle' uses the real GPU (D3D on Windows) to accelerate the blur/3D
+// filters that dominate per-frame cost. If headless GPU init fails on this
+// machine, set RENDER_GL=swiftshader to force software rendering.
+export const RENDER_GL = process.env.RENDER_GL || 'angle';
