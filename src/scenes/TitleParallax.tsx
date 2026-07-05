@@ -35,76 +35,81 @@ export const TitleParallax: React.FC<{ title: string; kicker?: string }> = ({ ti
       />
       <DustLayer depth={2} count={18} />
 
-      {kicker ? (
-        <div
-          style={{
-            position: 'absolute',
-            top: '38%',
-            fontFamily: inter,
-            fontWeight: 700,
-            fontSize: 26,
-            letterSpacing: '0.45em',
-            textTransform: 'uppercase',
-            color: theme.accent,
-            opacity: kickerReveal,
-            transform: `translateY(${(1 - kickerReveal) * 14}px)`,
-          }}
-        >
-          {kicker}
-        </div>
-      ) : null}
-
-      <AbsoluteFill style={{ perspective: 900, justifyContent: 'center', alignItems: 'center' }}>
-        <div style={{ transformStyle: 'preserve-3d', transform: `rotateX(${rotX}deg)`, position: 'relative', opacity: reveal }}>
-          <h1
+      {/* kicker + title share ONE centered column, so the kicker always sits a
+          fixed gap ABOVE the title regardless of whether the title wraps to 1 or
+          2 lines. (Previously the kicker was pinned at top:38% while the title
+          was independently centered — a 2-line title grew upward and collided
+          with it.) The whole unit stays vertically centered. */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24, maxWidth: 1400 }}>
+        {kicker ? (
+          <div
             style={{
-              position: 'absolute',
-              inset: 0,
-              margin: 0,
-              fontFamily: playfair,
+              fontFamily: inter,
               fontWeight: 700,
-              fontSize,
-              color: '#000',
-              textAlign: 'center',
-              transform: 'translateZ(-60px)',
-              filter: 'blur(8px)',
-              opacity: 0.5,
-            }}
-          >
-            {title}
-          </h1>
-          <h1
-            style={{
-              position: 'absolute',
-              inset: 0,
-              margin: 0,
-              fontFamily: playfair,
-              fontWeight: 700,
-              fontSize,
+              fontSize: 26,
+              letterSpacing: '0.45em',
+              textTransform: 'uppercase',
               color: theme.accent,
-              textAlign: 'center',
-              transform: 'translateZ(40px)',
-              filter: 'blur(14px)',
-              opacity: 0.25,
+              opacity: kickerReveal,
+              transform: `translateY(${(1 - kickerReveal) * 14}px)`,
             }}
           >
-            {title}
-          </h1>
-          <h1
-            style={{
-              margin: 0,
-              fontFamily: playfair,
-              fontWeight: 700,
-              fontSize,
-              color: theme.textPrimary,
-              textAlign: 'center',
-              maxWidth: 1400,
-            }}
-          >
-            {title}
-          </h1>
+            {kicker}
+          </div>
+        ) : null}
+
+        <div style={{ perspective: 900 }}>
+          <div style={{ transformStyle: 'preserve-3d', transform: `rotateX(${rotX}deg)`, position: 'relative', opacity: reveal }}>
+            <h1
+              style={{
+                position: 'absolute',
+                inset: 0,
+                margin: 0,
+                fontFamily: playfair,
+                fontWeight: 700,
+                fontSize,
+                color: '#000',
+                textAlign: 'center',
+                transform: 'translateZ(-60px)',
+                filter: 'blur(8px)',
+                opacity: 0.5,
+              }}
+            >
+              {title}
+            </h1>
+            <h1
+              style={{
+                position: 'absolute',
+                inset: 0,
+                margin: 0,
+                fontFamily: playfair,
+                fontWeight: 700,
+                fontSize,
+                color: theme.accent,
+                textAlign: 'center',
+                transform: 'translateZ(40px)',
+                filter: 'blur(14px)',
+                opacity: 0.25,
+              }}
+            >
+              {title}
+            </h1>
+            <h1
+              style={{
+                margin: 0,
+                fontFamily: playfair,
+                fontWeight: 700,
+                fontSize,
+                color: theme.textPrimary,
+                textAlign: 'center',
+                maxWidth: 1400,
+              }}
+            >
+              {title}
+            </h1>
+          </div>
         </div>
-      </AbsoluteFill>
+      </div>
 
       <AbsoluteFill style={{ background: 'radial-gradient(circle, transparent 55%, rgba(0,0,0,0.6) 100%)', pointerEvents: 'none' }} />
     </AbsoluteFill>
