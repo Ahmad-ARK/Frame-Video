@@ -1,8 +1,17 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
-import { KEYS, SCENE_MODEL } from './config';
+import { KEYS, PLAN_MODEL, DEEPSEEK_BASE_URL } from './config';
 
+// Real Anthropic client — used by the VISION role (verify.ts / qa.ts import this).
 export const anthropic = new Anthropic({ apiKey: KEYS.anthropic });
+
+// Planning client — DeepSeek's Anthropic-compatible endpoint when DEEPSEEK_API_KEY
+// is set, else the real Anthropic client. Same SDK surface, different base URL/key,
+// so structuredCall's logic is shared verbatim between the two providers.
+const USING_DEEPSEEK = Boolean(KEYS.deepseek);
+export const planClient = USING_DEEPSEEK
+  ? new Anthropic({ apiKey: KEYS.deepseek, baseURL: DEEPSEEK_BASE_URL })
+  : anthropic;
 
 /**
  * Structured LLM call: forces a tool invocation whose input matches the zod
@@ -20,22 +29,25 @@ export async function structuredCall<T>(opts: {
   model?: string;
   maxTokens?: number;
 }): Promise<T> {
-  const { schema, system, user, model = SCENE_MODEL, maxTokens = 8000 } = opts;
+  const { schema, system, user, model = PLAN_MODEL, maxTokens = 8000 } = opts;
   const jsonSchema = z.toJSONSchema(schema, { target: 'draft-7' }) as Record<string, unknown>;
+
+  // Anthropic prompt caching: system as a content-block array carrying a
+  // cache_control breakpoint. Tools render before system, so this one marker
+  // caches the tool's JSON schema + system text together, reused across every
+  // planScenes call. DeepSeek's endpoint caches automatically (no cache_control),
+  // so we send a plain system string there to avoid any proxy quirk.
+  const systemParam = USING_DEEPSEEK
+    ? system
+    : [{ type: 'text' as const, text: system, cache_control: { type: 'ephemeral' as const } }];
 
   let feedback = '';
   const MAX_ATTEMPTS = 4;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const msg = await anthropic.messages.create({
+    const msg = await planClient.messages.create({
       model,
       max_tokens: maxTokens,
-      // system as a content-block array (not a bare string) so it can carry a
-      // cache_control breakpoint. Tools render before system in the prompt, so
-      // this one marker caches the tool's JSON schema + this whole system text
-      // together — reused verbatim across every planScenes call, in every video.
-      // Forcing tool_choice below only invalidates the messages tier (per-request
-      // variable content), never this cached tools+system prefix.
-      system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
+      system: systemParam,
       messages: [{ role: 'user', content: feedback ? `${user}\n\nYour previous output was invalid: ${feedback}\nEmit a corrected result.` : user }],
       tools: [
         {

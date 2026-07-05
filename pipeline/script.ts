@@ -1,6 +1,31 @@
+import { z } from 'zod';
 import { structuredCall } from './llm';
 import { ScriptSchema, LongScriptSchema, type Script } from './types';
 import { TARGET_SCRIPT_WORDS } from './config';
+
+/**
+ * For VERBATIM scripts (author supplies the narration): a punchy title +
+ * thumbnail hook + mood, generated in one cheap LLM call. Without this, the
+ * title was just the first 6 words of the script ("In 1953, the Korean War…"),
+ * which makes a weak thumbnail. Mood also drives background-music selection.
+ */
+const VerbatimMetaSchema = z.object({
+  title: z
+    .string()
+    .describe(
+      'YouTube documentary title, max 8 words — a compelling hook that makes someone click. ' +
+        'NEVER just echo the first sentence of the script. e.g. for a Korean-War script: "The War That Never Ended".',
+    ),
+  thumbText: z
+    .string()
+    .describe(
+      'Thumbnail hook text: 2-4 words, UPPERCASE, a curiosity punch distinct from the title. ' +
+        'e.g. "STILL AT WAR", "70 YEARS", "NOBODY WON".',
+    ),
+  mood: z
+    .enum(['somber', 'epic', 'tense', 'curious', 'uplifting'])
+    .describe('overall emotional register of the video — drives the background music choice'),
+});
 
 const RULES =
   `- Each beat is one clear idea, 15-40 words, written for the ear: short sentences, concrete nouns, active voice.\n` +
@@ -33,12 +58,29 @@ export async function writeScript(topic: string, research = '', targetWords = TA
       .split(/\n\s*\n/)
       .map((para) => ({ beats: toBeats(para) }))
       .filter((a) => a.beats.length > 0);
-    return {
-      title: text.replace(/\s+/g, ' ').split(' ').slice(0, 6).join(' '),
-      mood: 'curious',
-      thumbText: undefined,
-      acts: acts.length > 0 ? acts : [{ beats: toBeats(text) }],
-    };
+    const finalActs = acts.length > 0 ? acts : [{ beats: toBeats(text) }];
+
+    // AI-generate a real title + thumbnail hook + mood from the script.
+    // Best-effort: any failure falls back to the old first-6-words behaviour so
+    // a hiccup never blocks a render.
+    const fallbackTitle = text.replace(/\s+/g, ' ').split(' ').slice(0, 6).join(' ');
+    try {
+      console.log('🏷️  Generating title & thumbnail hook...');
+      const meta = await structuredCall({
+        schema: VerbatimMetaSchema,
+        system:
+          'You write YouTube documentary titles and thumbnail hooks. Given the full narration script, ' +
+          'produce a title and a punchy thumbnail hook that make someone click. Capture the whole arc and ' +
+          'its payoff — never just echo the opening sentence.',
+        user: `DOCUMENTARY SCRIPT:\n${text.slice(0, 8000)}\n\nProduce the title, thumbnail text, and mood.`,
+        maxTokens: 300,
+      });
+      console.log(`   → "${meta.title}"  ·  thumb: "${meta.thumbText}"  ·  mood: ${meta.mood}`);
+      return { title: meta.title, mood: meta.mood, thumbText: meta.thumbText, acts: finalActs };
+    } catch (err) {
+      console.warn(`   ⚠️ title-gen failed (${(err as Error).message.slice(0, 80)}) — using fallback`);
+      return { title: fallbackTitle, mood: 'curious', thumbText: undefined, acts: finalActs };
+    }
   }
 
   const referenceBlock = research

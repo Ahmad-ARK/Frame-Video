@@ -19,6 +19,15 @@ export const CREDITS_SECONDS = 4;
 export const SCENE_MODEL = process.env.SCENE_MODEL || 'claude-sonnet-5';
 export const VISION_MODEL = process.env.VISION_MODEL || 'claude-haiku-4-5-20251001';
 
+// Planning LLM (scene direction). When DEEPSEEK_API_KEY is set, planning routes to
+// DeepSeek (V4-Flash) via its Anthropic-COMPATIBLE endpoint, so the existing
+// Anthropic-SDK structuredCall is reused with just a different client. Vision
+// (verify + QA) always stays on the real Anthropic key with VISION_MODEL.
+// PLAN_MODEL overrides the model id (verify the exact string on your DeepSeek dashboard —
+// 'deepseek-chat' is the non-thinking chat model; V4-Flash-specific ids also work).
+export const DEEPSEEK_BASE_URL = process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/anthropic';
+export const PLAN_MODEL = process.env.PLAN_MODEL || (process.env.DEEPSEEK_API_KEY ? 'deepseek-chat' : SCENE_MODEL);
+
 export const TTS_VOICE = process.env.TTS_VOICE || 'en-US-GuyNeural';
 /** 'auto' prefers the Chatterbox endpoint when configured; 'edge' forces the free fallback. */
 export const TTS_PROVIDER = process.env.TTS_PROVIDER || 'auto';
@@ -35,6 +44,7 @@ export const TARGET_SCRIPT_WORDS = Number(process.env.TARGET_SCRIPT_WORDS || 170
 
 export const KEYS = {
   anthropic: process.env.ANTHROPIC_API_KEY,
+  deepseek: process.env.DEEPSEEK_API_KEY,
   pixabay: process.env.PIXABAY_API_KEY,
   pexels: process.env.PEXELS_API_KEY,
   fluxModalKey: process.env.FLUX_MODAL_KEY,
