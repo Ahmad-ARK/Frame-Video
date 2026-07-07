@@ -2,12 +2,13 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { execFileSync } from 'child_process';
-import { anthropic } from './llm';
-import { FPS, VISION_MODEL } from './config';
+import { visionCall, type VisionPart } from './vision';
+import { FPS } from './config';
 import type { QaFinding, RenderScene } from './types';
 
 /**
- * Automated QA pass: one frame per scene → one Haiku vision call (~$0.01).
+ * Automated QA pass: one frame per scene → one cheap vision call (Gemini
+ * Flash/Flash-Lite, or Anthropic Haiku as fallback — see pipeline/vision.ts).
  * Flags scenes whose visuals are irrelevant to the narration, look broken
  * (placeholder/black/stretched), or have clipped/overflowing text.
  */
@@ -34,7 +35,7 @@ export async function qaVideo(videoPath: string, scenes: RenderScene[]): Promise
     }
     if (checkable.length === 0) return [];
 
-    const content: any[] = [
+    const content: VisionPart[] = [
       {
         type: 'text',
         text:
@@ -57,10 +58,7 @@ export async function qaVideo(videoPath: string, scenes: RenderScene[]): Promise
         type: 'text',
         text: `Scene ${c.idx} [${s.component}] narration: "${s.narration.slice(0, 140)}"`,
       });
-      content.push({
-        type: 'image',
-        source: { type: 'base64', media_type: 'image/jpeg', data: fs.readFileSync(c.file).toString('base64') },
-      });
+      content.push({ type: 'image', mimeType: 'image/jpeg', base64: fs.readFileSync(c.file).toString('base64') });
     }
     content.push({
       type: 'text',
@@ -69,13 +67,7 @@ export async function qaVideo(videoPath: string, scenes: RenderScene[]): Promise
         '— exactly ONE entry per distinct sceneIndex shown, ok:true when fine.',
     });
 
-    const msg = await anthropic.messages.create({
-      model: VISION_MODEL,
-      max_tokens: 1500,
-      messages: [{ role: 'user', content }],
-    });
-    const textBlock = msg.content.find((b) => b.type === 'text');
-    const raw = textBlock && textBlock.type === 'text' ? textBlock.text : '';
+    const raw = await visionCall(content, 1500);
     const match = raw.match(/\{[\s\S]*\}/);
     if (!match) return [];
     const parsed = JSON.parse(match[0]);

@@ -18,34 +18,94 @@ stock footage reads as one film.
 
 ---
 
+## 0. Fresh-machine setup (brand-new PC — nothing installed yet)
+
+If this is a clean Windows PC with no Node, npm, git, or Python, do this first.
+**Already have these tools? Skip straight to §1.**
+
+The fastest way is `winget` — built into Windows 10 (2004+) and Windows 11, no
+download needed. Open **PowerShell** and run:
+
+```powershell
+winget install OpenJS.NodeJS.LTS   # Node.js + npm (npm ships bundled — no separate install)
+winget install Git.Git             # git (to get the project files)
+winget install Gyan.FFmpeg         # ffmpeg + ffprobe (audio/video processing)
+```
+
+> **Python + pip are only needed if you plan to (re)deploy the optional self-hosted
+> Modal endpoints yourself** (§12 — FLUX image gen / Chatterbox TTS). If you're just
+> running the pipeline against endpoints someone else already deployed, skip this:
+> ```powershell
+> winget install Python.Python.3.12   # pip ships bundled with this installer
+> ```
+
+**Close and reopen your terminal after installing** (PATH doesn't refresh in the
+window you ran `winget` in). Then verify everything landed:
+
+```powershell
+node --version    # v18 or higher
+npm --version
+git --version
+ffmpeg -version
+python --version  # only if you installed it
+pip --version     # only if you installed it
+```
+
+No `winget` (older Windows)? Install manually instead, then verify the same way:
+[nodejs.org](https://nodejs.org) (LTS) · [git-scm.com](https://git-scm.com) ·
+[ffmpeg.org](https://ffmpeg.org/download.html) · [python.org](https://python.org).
+On macOS/Linux, use `brew install node git ffmpeg python` or your distro's package
+manager instead — the rest of this README is otherwise the same, aside from a few
+Windows-specific notes called out where they apply (§14).
+
+**Get the project files** — either clone it:
+
+```bash
+git clone <this-repo-url>
+cd documentary-pipeline
+```
+
+or, if you were handed a zipped/copied folder instead of a repo URL, just extract
+it and `cd` into it — git isn't required to *run* the pipeline, only to fetch it
+this way (and ffmpeg/git are otherwise independent of each other).
+
+Once `node`, `npm`, and `ffmpeg` all print a version, continue to §1.
+
 ## 1. Requirements
 
-| What | Why | Install |
-| --- | --- | --- |
-| **Node.js 18+** | everything | https://nodejs.org |
-| **ffmpeg + ffprobe on PATH** | audio normalization, durations, QA frames | https://ffmpeg.org (`winget install ffmpeg` on Windows) |
-| An **LLM key** (see §2) | scene planning, title, image checks | DeepSeek and/or Anthropic |
-| Internet at render time | Google Fonts are fetched while rendering | — |
+Quick reference — see §0 above for install commands on a fresh machine.
+
+| What | Why |
+| --- | --- |
+| **Node.js 18+** (npm comes with it) | everything |
+| **ffmpeg + ffprobe on PATH** | audio normalization, durations, QA frames |
+| An **LLM key** (see §2) | scene planning, title, image checks — DeepSeek and/or Anthropic |
+| Internet at render time | Google Fonts are fetched while rendering |
 
 Optional but recommended: free **Pixabay** + **Pexels** API keys (stock b-roll).
 
 ## 2. LLM providers (the cost knobs)
 
 The pipeline uses LLMs for two different jobs, and you can point each at a
-different provider via `.env`:
+different provider via `.env` — an **Anthropic key is still required** as the
+automatic fallback for both roles if the cheaper keys below are absent.
 
 | Role | What it does | Default | Env |
 | --- | --- | --- | --- |
 | **Planning** | maps script → scenes, image queries, cues; writes the title/thumbnail hook | DeepSeek **V4-Flash** if `DEEPSEEK_API_KEY` set, else Claude Sonnet | `DEEPSEEK_API_KEY`, `PLAN_MODEL` |
-| **Vision** | ranks/accepts images, reads focal point + brightness + subject; post-render QA | Claude **Haiku 4.5** | `ANTHROPIC_API_KEY`, `VISION_MODEL` |
+| **Vision** | ranks/accepts images, reads focal point + brightness + subject; post-render QA | **Gemini** (Flash-Lite) if `GEMINI_API_KEY` set, else Claude Haiku 4.5 | `GEMINI_API_KEY`, `GEMINI_VISION_MODEL`, `VISION_MODEL` |
 
 **Recommended cheap setup:** DeepSeek Platform key for planning (≈ **$0.01–0.02
-per video**, and prompt-caches automatically) + an Anthropic key for vision
-(≈ **$0.17**, or run `--no-qa` to roughly halve it). Planning falls back to
-Anthropic automatically if you don't set a DeepSeek key.
+per video**, and prompt-caches automatically) + a Gemini key for vision
+(≈ **$0.02–0.05/video**, vs ≈$0.17 on Haiku — get a free key at
+[aistudio.google.com](https://aistudio.google.com); free tier is fine to start,
+switch `GEMINI_VISION_MODEL` to `gemini-2.5-flash` for better accuracy once
+past it). Either role falls back to Anthropic automatically if its cheaper key
+is unset.
 
 DeepSeek uses its Anthropic-compatible endpoint (`api.deepseek.com/anthropic`),
-so the same code drives both — you only swap a key + model string.
+so the same Anthropic-SDK code drives both planning providers — you only swap
+a key + model string. Gemini uses its own REST API (`pipeline/vision.ts`).
 
 ## 3. Install & first run
 
@@ -214,7 +274,10 @@ punches in a polaroid. Enumerations become synced pop sequences automatically.
 
 ## 12. Optional self-hosted endpoints (Modal)
 
-Both optional; the pipeline works without them.
+Both optional; the pipeline works without them — needed only if *you* are the
+one deploying/redeploying FLUX or Chatterbox (needs Python + pip, see §0).
+Most users just get the endpoint URL + keys from whoever deployed them and
+paste those into `.env` (§2) — no Python needed for that.
 
 **Chatterbox TTS** (better narrator, MIT-licensed):
 ```bash
@@ -241,6 +304,9 @@ credits card, and written into the metadata. Music is Kevin MacLeod
 
 ## 14. Troubleshooting
 
+- **`node`/`git`/`ffmpeg` "not recognized" right after installing** — you're still
+  in the terminal window that was open *before* the install; PATH only refreshes
+  in a new one. Close the terminal, reopen it, and re-check `--version` (§0).
 - **`ffmpeg` not found** — install it; confirm `ffmpeg -version` in a fresh terminal.
 - **Wikimedia searches fail (ENOTFOUND / all downloads fail)** — Wikimedia is
   region-blocked (e.g. Pakistan); use a VPN for historical imagery. On a *large*
@@ -251,4 +317,3 @@ credits card, and written into the metadata. Music is Kevin MacLeod
 - **`modal deploy` 'charmap' error on Windows** — run `PYTHONUTF8=1 modal deploy ...`.
 - Keep the project on a **local disk** — cloud-synced folders (OneDrive/Dropbox)
   can lock files mid-render.
-```

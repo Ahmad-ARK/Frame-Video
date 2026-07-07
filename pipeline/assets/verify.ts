@@ -1,14 +1,8 @@
-import { anthropic } from '../llm';
-import { VISION_MODEL } from '../config';
+import { visionCall, type VisionPart } from '../vision';
 import { httpClient, UA, withFetchSlot } from './providers';
 import type { AssetCandidate } from '../types';
 
-type ImageBlock = {
-  type: 'image';
-  source: { type: 'base64'; media_type: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'; data: string };
-};
-
-async function fetchThumb(url: string): Promise<ImageBlock | null> {
+async function fetchThumb(url: string): Promise<VisionPart | null> {
   // compliant UA + retry: without these, one Wikimedia throttle made every
   // thumbnail unfetchable → "vision verify skipped" → unverified images
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -22,14 +16,14 @@ async function fetchThumb(url: string): Promise<ImageBlock | null> {
         }),
       );
       const ct = String(res.headers['content-type'] ?? '');
-      const media = ct.includes('png')
+      const mimeType = ct.includes('png')
         ? 'image/png'
         : ct.includes('webp')
           ? 'image/webp'
           : ct.includes('gif')
             ? 'image/gif'
             : 'image/jpeg';
-      return { type: 'image', source: { type: 'base64', media_type: media, data: Buffer.from(res.data).toString('base64') } };
+      return { type: 'image', mimeType, base64: Buffer.from(res.data).toString('base64') };
     } catch (err) {
       if (attempt === 2) return null;
       const status = (err as { response?: { status?: number } }).response?.status;
@@ -51,8 +45,9 @@ export interface VerifyResult {
 }
 
 /**
- * One cheap Haiku vision call per query: shows up to 4 candidate thumbnails and
- * asks which actually depict the query (ranked). ~$0.002 per call.
+ * One cheap vision call per query (Gemini Flash/Flash-Lite, or Anthropic Haiku
+ * as fallback — see pipeline/vision.ts): shows up to 2 candidate thumbnails and
+ * asks which actually depict the query (ranked).
  */
 export async function verifyCandidates(
   query: string,
@@ -60,7 +55,7 @@ export async function verifyCandidates(
   candidates: AssetCandidate[],
 ): Promise<VerifyResult> {
   const thumbs = await Promise.all(candidates.map((c) => fetchThumb(c.thumbUrl)));
-  const usable: { idx: number; block: ImageBlock }[] = [];
+  const usable: { idx: number; block: VisionPart }[] = [];
   thumbs.forEach((t, i) => {
     if (t) usable.push({ idx: i, block: t });
   });
@@ -71,7 +66,7 @@ export async function verifyCandidates(
     return { ranked: candidates.map((_, i) => i), focals: {}, tones: {}, subjects: {} };
   }
 
-  const content: any[] = [
+  const content: VisionPart[] = [
     {
       type: 'text',
       text:
@@ -100,13 +95,7 @@ export async function verifyCandidates(
   });
 
   try {
-    const msg = await anthropic.messages.create({
-      model: VISION_MODEL,
-      max_tokens: 300,
-      messages: [{ role: 'user', content }],
-    });
-    const text = msg.content.find((b) => b.type === 'text');
-    const raw = text && text.type === 'text' ? text.text : '';
+    const raw = await visionCall(content, 300);
     const match = raw.match(/\{[\s\S]*\}/);
     if (!match) return { ranked: [], focals: {}, tones: {}, subjects: {} };
     const parsed = JSON.parse(match[0]);
