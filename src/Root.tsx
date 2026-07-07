@@ -94,12 +94,13 @@ export interface DocumentaryProps {
   hasBgm?: boolean;
   bgmPath?: string;
   theme?: string;
+  themeAccent?: string;
   [key: string]: unknown;
 }
 
 // Bgm lives in its own module so the Shorts composition can share it.
 
-const DocumentaryVideo: React.FC<DocumentaryProps> = ({ scenes, credits, creditsDurationInFrames, hasBgm = true, bgmPath, theme }) => {
+const DocumentaryVideo: React.FC<DocumentaryProps> = ({ scenes, credits, creditsDurationInFrames, hasBgm = true, bgmPath, theme, themeAccent }) => {
   if (scenes.length === 0) {
     return <AbsoluteFill style={{ backgroundColor: '#000' }} />;
   }
@@ -148,7 +149,7 @@ const DocumentaryVideo: React.FC<DocumentaryProps> = ({ scenes, credits, credits
   );
 
   return (
-    <ThemeProvider value={resolveTheme(theme)}>
+    <ThemeProvider value={resolveTheme(theme, themeAccent)}>
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
       <ImpactShake shakeFrames={shakeFrames}>
         <TransitionSeries>{seriesItems}</TransitionSeries>

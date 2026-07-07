@@ -15,12 +15,16 @@ export const SplitScreen: React.FC<{
   leftLabel?: string;
   rightLabel?: string;
   centerLabel?: string;
-}> = ({ images = [], leftLabel, rightLabel, centerLabel }) => {
+  variant?: string;
+}> = ({ images = [], leftLabel, rightLabel, centerLabel, variant }) => {
   const theme = useTheme();
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
   const leftSrc = images[0] ?? 'placeholder.jpg';
   const rightSrc = images[1] ?? leftSrc;
+  // straight = vertical seam + no center badge (clean); classic = angled + badge
+  const straight = variant === 'straight';
+  const dividerRotate = straight ? 0 : 6;
 
   const slide = spring({ frame, fps, config: { damping: 18, stiffness: 90 } });
   const dividerScale = spring({ frame: frame - 6, fps, config: { damping: 200 } });
@@ -106,14 +110,15 @@ export const SplitScreen: React.FC<{
           width: 6,
           height: '120%',
           backgroundColor: theme.accent,
-          transform: `translateX(-50%) rotate(6deg) scaleY(${dividerScale})`,
+          transform: `translateX(-50%) rotate(${dividerRotate}deg) scaleY(${dividerScale})`,
           transformOrigin: 'center',
           boxShadow: `0 0 ${24 + Math.sin(frame * 0.15) * 8}px ${theme.accentGlow}`,
           zIndex: 2,
         }}
       />
 
-      {/* center badge */}
+      {/* center badge (classic only) */}
+      {!straight && (
       <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center', zIndex: 3, pointerEvents: 'none' }}>
         <div
           style={{
@@ -143,6 +148,7 @@ export const SplitScreen: React.FC<{
           )}
         </div>
       </AbsoluteFill>
+      )}
     </AbsoluteFill>
   );
 };

@@ -10,11 +10,12 @@ const fitFont = (text: string, budget: number, min: number, max: number) =>
 
 // ---------- MacroScreenFocus: punchy highlighted headline over drifting image ----------
 
-export const MacroScreenFocus: React.FC<{ images?: string[]; headline: string }> = ({ images = [], headline }) => {
+export const MacroScreenFocus: React.FC<{ images?: string[]; headline: string; variant?: string }> = ({ images = [], headline, variant }) => {
   const theme = useTheme();
   const frame = useCurrentFrame();
-  const { durationInFrames } = useVideoConfig();
+  const { fps, durationInFrames } = useVideoConfig();
   const img = images[0] ?? 'placeholder.jpg';
+  const v = variant === 'band' || variant === 'plate' ? variant : 'classic';
 
   const driftX = interpolate(frame, [0, durationInFrames], [0, -40], { easing: Easing.linear });
   const scale = interpolate(frame, [0, durationInFrames], [1.1, 1.16], { easing: Easing.linear });
@@ -25,6 +26,44 @@ export const MacroScreenFocus: React.FC<{ images?: string[]; headline: string }>
   });
   const fontSize = fitFont(headline, 2600, 60, 130);
 
+  // band: full-colour graded photo + headline on a solid accent band
+  if (v === 'band') {
+    const reveal = spring({ frame: frame - 6, fps, config: { damping: 200 } });
+    return (
+      <AbsoluteFill style={{ backgroundColor: theme.bg, overflow: 'hidden' }}>
+        <Img src={staticFile(img)} style={{ width: '100%', height: '100%', objectFit: 'cover', filter: gradeFilter(theme), transform: `translateX(${driftX}px) scale(${scale})` }} />
+        <AbsoluteFill style={{ background: 'linear-gradient(rgba(0,0,0,0.3), rgba(0,0,0,0.5))', pointerEvents: 'none' }} />
+        <AbsoluteFill style={{ justifyContent: 'center' }}>
+          <div style={{ backgroundColor: theme.accent, padding: '30px 6%', opacity: reveal, transform: `translateY(${(1 - reveal) * 40}px)`, boxShadow: '0 22px 60px rgba(0,0,0,0.55)' }}>
+            <h1 style={{ margin: 0, fontFamily: oswald, fontWeight: 700, fontSize: fitFont(headline, 2400, 48, 100), lineHeight: 1.04, color: theme.ink, textTransform: 'uppercase', letterSpacing: '0.01em' }}>
+              {headline}
+            </h1>
+          </div>
+        </AbsoluteFill>
+        <AbsoluteFill style={{ background: 'radial-gradient(circle, transparent 50%, rgba(0,0,0,0.4) 100%)', pointerEvents: 'none' }} />
+      </AbsoluteFill>
+    );
+  }
+
+  // plate: darkened photo backdrop + a big centred typographic statement + accent rule
+  if (v === 'plate') {
+    const reveal = spring({ frame: frame - 6, fps, config: { damping: 200 } });
+    return (
+      <AbsoluteFill style={{ backgroundColor: theme.bg, overflow: 'hidden', justifyContent: 'center', alignItems: 'center', padding: '0 8%' }}>
+        <Img src={staticFile(img)} style={{ position: 'absolute', width: '100%', height: '100%', objectFit: 'cover', filter: `${gradeFilter(theme)} brightness(0.3) blur(3px)`, transform: `translateX(${driftX}px) scale(${scale})` }} />
+        <AbsoluteFill style={{ backgroundColor: theme.bg, opacity: 0.5, pointerEvents: 'none' }} />
+        <div style={{ textAlign: 'center', opacity: reveal, transform: `translateY(${(1 - reveal) * 24}px)`, position: 'relative' }}>
+          <h1 style={{ margin: 0, fontFamily: playfair, fontWeight: 700, fontSize: fitFont(headline, 2800, 70, 150), lineHeight: 1.06, color: theme.textPrimary, textShadow: '0 6px 30px rgba(0,0,0,0.7)' }}>
+            {headline}
+          </h1>
+          <div style={{ height: 5, width: 360 * reveal, maxWidth: '80%', margin: '30px auto 0', backgroundColor: theme.accent, boxShadow: `0 0 20px ${theme.accentGlow}` }} />
+        </div>
+        <AbsoluteFill style={{ background: 'radial-gradient(circle, transparent 45%, rgba(0,0,0,0.55) 100%)', pointerEvents: 'none' }} />
+      </AbsoluteFill>
+    );
+  }
+
+  // classic
   return (
     <AbsoluteFill style={{ backgroundColor: theme.paper, overflow: 'hidden' }}>
       <AbsoluteFill style={{ filter: 'grayscale(100%)' }}>

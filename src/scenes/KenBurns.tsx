@@ -4,18 +4,23 @@ import { useMontage } from './useMontage';
 import { useTheme, gradeFilter } from '../theme';
 
 /**
- * The montage workhorse: blurred-fill background + contained foreground with
- * alternating zoom/pan per image. Direction alternates by image index so
- * consecutive stills never move the same way.
+ * The montage workhorse. Three channel-selectable visual languages (see
+ * pipeline/variants.ts), all sharing the same montage timing + focal motion:
+ *  - classic   — blurred side-fill + height-fit contained image (default)
+ *  - fullbleed — image fills the frame, stronger zoom, heavy edge vignette
+ *  - framed    — image inset with an accent border on a solid ground (editorial)
+ * Direction alternates by image index so consecutive stills never move the same way.
  */
-export const KenBurns: React.FC<{ images?: string[]; focalPoints?: ({ x: number; y: number } | null)[]; imageTones?: (string | null)[] }> = ({
-  images = [],
-  focalPoints,
-  imageTones,
-}) => {
+export const KenBurns: React.FC<{
+  images?: string[];
+  focalPoints?: ({ x: number; y: number } | null)[];
+  imageTones?: (string | null)[];
+  variant?: string;
+}> = ({ images = [], focalPoints, imageTones, variant }) => {
   const theme = useTheme();
   const imgs = images.length > 0 ? images : ['placeholder.jpg'];
   const m = useMontage(imgs.length);
+  const v = variant === 'fullbleed' || variant === 'framed' ? variant : 'classic';
 
   // With a known focal point the camera zooms INTO the subject and drifts
   // toward it; without one it falls back to alternating blind moves.
@@ -34,42 +39,67 @@ export const KenBurns: React.FC<{ images?: string[]; focalPoints?: ({ x: number;
     };
   };
 
-  const renderLayer = (index: number, localFrame: number, opacity: number) => (
-    <AbsoluteFill key={index} style={{ opacity }}>
-      <Img
-        src={staticFile(imgs[index])}
-        style={{
-          width: '100%',
-          height: '100%',
-          objectFit: 'cover',
-          filter: `${gradeFilter(theme, imageTones?.[index])} blur(45px) brightness(0.45)`,
-          transform: 'scale(1.15)',
-        }}
-      />
-      <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center' }}>
+  const renderLayer = (index: number, localFrame: number, opacity: number) => {
+    const grade = gradeFilter(theme, imageTones?.[index]);
+    const mo = motion(index, localFrame);
+
+    if (v === 'fullbleed') {
+      // image fills the whole frame — immersive/cinematic
+      return (
+        <AbsoluteFill key={index} style={{ opacity }}>
+          <Img src={staticFile(imgs[index])} style={{ width: '100%', height: '100%', objectFit: 'cover', filter: grade, ...mo }} />
+        </AbsoluteFill>
+      );
+    }
+
+    if (v === 'framed') {
+      // inset image with an accent border on the theme ground — editorial/gallery
+      return (
+        <AbsoluteFill key={index} style={{ opacity, backgroundColor: theme.bg }}>
+          <AbsoluteFill
+            style={{
+              margin: '5.5% 6%',
+              overflow: 'hidden',
+              borderRadius: 4,
+              border: `2px solid ${theme.accent}`,
+              boxShadow: '0 30px 90px rgba(0,0,0,0.55)',
+            }}
+          >
+            <Img src={staticFile(imgs[index])} style={{ width: '100%', height: '100%', objectFit: 'cover', filter: grade, ...mo }} />
+          </AbsoluteFill>
+        </AbsoluteFill>
+      );
+    }
+
+    // classic (default): blurred side-fill + height-fit contained foreground
+    return (
+      <AbsoluteFill key={index} style={{ opacity }}>
         <Img
           src={staticFile(imgs[index])}
-          style={{
-            // fill the viewport height exactly, aspect intact: portrait images
-            // show blurred side fill, panoramas crop their sides
-            height: '100%',
-            width: 'auto',
-            filter: gradeFilter(theme, imageTones?.[index]),
-            ...motion(index, localFrame),
-            boxShadow: '0 30px 90px rgba(0,0,0,0.6)',
-          }}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', filter: `${grade} blur(45px) brightness(0.45)`, transform: 'scale(1.15)' }}
         />
+        <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center' }}>
+          <Img
+            src={staticFile(imgs[index])}
+            style={{ height: '100%', width: 'auto', filter: grade, ...mo, boxShadow: '0 30px 90px rgba(0,0,0,0.6)' }}
+          />
+        </AbsoluteFill>
       </AbsoluteFill>
-    </AbsoluteFill>
-  );
+    );
+  };
+
+  const vignette =
+    v === 'fullbleed'
+      ? 'radial-gradient(circle, transparent 40%, rgba(0,0,0,0.72) 100%)'
+      : v === 'framed'
+        ? null
+        : 'radial-gradient(circle, transparent 55%, rgba(0,0,0,0.5) 100%)';
 
   return (
-    <AbsoluteFill style={{ backgroundColor: '#000', overflow: 'hidden' }}>
+    <AbsoluteFill style={{ backgroundColor: v === 'framed' ? theme.bg : '#000', overflow: 'hidden' }}>
       {renderLayer(m.base.index, m.base.localFrame, 1)}
       {m.overlay && renderLayer(m.overlay.index, m.overlay.localFrame, m.overlay.opacity)}
-      <AbsoluteFill
-        style={{ background: 'radial-gradient(circle, transparent 55%, rgba(0,0,0,0.5) 100%)', pointerEvents: 'none' }}
-      />
+      {vignette && <AbsoluteFill style={{ background: vignette, pointerEvents: 'none' }} />}
     </AbsoluteFill>
   );
 };

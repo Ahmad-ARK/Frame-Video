@@ -5,7 +5,7 @@ import { feature } from 'topojson-client';
 import type { FeatureCollection, Feature } from 'geojson';
 import worldTopo from 'world-atlas/countries-110m.json';
 import countriesMeta from 'world-countries';
-import { inter, oswald } from '../fonts';
+import { inter, oswald, playfair } from '../fonts';
 import { useTheme } from '../theme';
 
 // ---------- static data, built once ----------
@@ -42,15 +42,38 @@ const CONN_COLORS: Record<MapConnection['type'], string> = {
  * The camera starts on the world view and eases into the bounding box of the
  * focus countries; every overlay is computed from the SAME projection each
  * frame, so nothing drifts while the camera moves.
+ *
+ * Three surface treatments (variant) — ALL share the exact same camera/
+ * projection math above; only fill/stroke/font/overlay tokens change, so the
+ * fragile scale/translate logic is never touched by a variant:
+ *  - classic    — the original: dark ocean, glowing routes, pulsing dots (default)
+ *  - tactical   — HUD/ops-room look: screen-space grid, scanline texture,
+ *                 crosshair reticles, bracketed "[ LABEL ]" chips
+ *  - parchment  — old-atlas look: paper ground, ink strokes, serif labels,
+ *                 no glow (engraved-map feel)
  */
 export const MapScene: React.FC<{
   focusCountries?: string[];
   connections?: MapConnection[];
   routes?: MapRoute[];
-}> = ({ focusCountries = [], connections = [], routes = [] }) => {
+  variant?: string;
+}> = ({ focusCountries = [], connections = [], routes = [], variant }) => {
   const theme = useTheme();
   const frame = useCurrentFrame();
   const { fps, durationInFrames } = useVideoConfig();
+  const v = variant === 'tactical' || variant === 'parchment' ? variant : 'classic';
+
+  // surface tokens — the only thing that differs between variants
+  const oceanColor = v === 'parchment' ? theme.paper : theme.map.ocean;
+  const landFill = v === 'parchment' ? theme.paperAged : theme.map.land;
+  const landStroke = v === 'parchment' ? `${theme.ink}55` : theme.map.landStroke;
+  const routeColor = v === 'parchment' ? theme.marker : v === 'tactical' ? theme.hud : theme.map.route;
+  const routeWidth = v === 'parchment' ? 3 : 5;
+  const routeGlow = v === 'parchment' ? 'none' : `drop-shadow(0 0 8px ${routeColor}b0)`;
+  const labelFont = v === 'parchment' ? playfair : oswald;
+  const labelFill = v === 'parchment' ? theme.ink : theme.map.label;
+  const labelStroke = v === 'parchment' ? theme.paper : oceanColor;
+  const dotGlow = v === 'parchment' ? 'none' : `drop-shadow(0 0 8px ${routeColor})`;
 
   // Every country touched by a route or connection is part of the story —
   // color and label it even if the planner forgot to list it in focus.
@@ -157,9 +180,24 @@ export const MapScene: React.FC<{
     return d;
   };
 
+  // tactical: fixed screen-space grid (not geo-projected — a cheap, stable HUD
+  // texture that doesn't need to track the camera's projection)
+  const gridLines =
+    v === 'tactical'
+      ? [
+          ...Array.from({ length: 7 }, (_, i) => ({ x1: ((i + 1) * W) / 8, y1: 0, x2: ((i + 1) * W) / 8, y2: H })),
+          ...Array.from({ length: 4 }, (_, i) => ({ x1: 0, y1: ((i + 1) * H) / 5, x2: W, y2: ((i + 1) * H) / 5 })),
+        ]
+      : [];
+
   return (
-    <AbsoluteFill style={{ backgroundColor: theme.map.ocean, overflow: 'hidden' }}>
+    <AbsoluteFill style={{ backgroundColor: oceanColor, overflow: 'hidden' }}>
       <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ position: 'absolute', inset: 0 }}>
+        {v === 'tactical' &&
+          gridLines.map((l, i) => (
+            <line key={`grid-${i}`} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke={theme.hud} strokeOpacity={0.08} strokeWidth={1} />
+          ))}
+
         {/* countries */}
         {world.features.map((f) => {
           const isFocus = focusSet.has(String(f.id));
@@ -169,9 +207,9 @@ export const MapScene: React.FC<{
             <path
               key={String(f.id)}
               d={path(f as any) ?? undefined}
-              fill={isFocus ? theme.map.focus : theme.map.land}
+              fill={isFocus ? theme.map.focus : landFill}
               fillOpacity={isFocus ? 0.25 + reveal * 0.55 : 1}
-              stroke={isFocus ? theme.map.focusStroke : theme.map.landStroke}
+              stroke={isFocus ? theme.map.focusStroke : landStroke}
               strokeWidth={isFocus ? 2 : 0.8}
             />
           );
@@ -190,14 +228,14 @@ export const MapScene: React.FC<{
               <path
                 d={arcPath(pts)}
                 fill="none"
-                stroke={theme.map.route}
-                strokeWidth={5}
+                stroke={routeColor}
+                strokeWidth={routeWidth}
                 strokeLinecap="round"
                 pathLength={100}
                 strokeDasharray={100}
                 strokeDashoffset={reveal}
                 opacity={0.9}
-                style={{ filter: `drop-shadow(0 0 8px ${theme.map.route}b0)` }}
+                style={{ filter: routeGlow }}
               />
             </g>
           );
@@ -246,26 +284,52 @@ export const MapScene: React.FC<{
           if (!c) return null;
           const pulse = Math.sin(frame * 0.16 + i * 1.4) * 0.25 + 0.75;
           const reveal = spring({ frame: frame - 22 - i * 6, fps, config: { damping: 200 } });
+          const label = v === 'tactical' ? `[ ${entry.name.toUpperCase()} ]` : entry.name.toUpperCase();
           return (
             <g key={entry.name} opacity={reveal}>
-              <circle cx={c[0]} cy={c[1]} r={9 * pulse + 4} fill={`${theme.map.route}40`} />
-              <circle cx={c[0]} cy={c[1]} r={7} fill={theme.map.route} style={{ filter: `drop-shadow(0 0 8px ${theme.map.route})` }} />
+              {v === 'tactical' ? (
+                // static locked-on reticle — no pulse, reads as a fixed target
+                <g stroke={routeColor} strokeWidth={2}>
+                  <circle cx={c[0]} cy={c[1]} r={13} fill="none" />
+                  <line x1={c[0] - 20} y1={c[1]} x2={c[0] - 6} y2={c[1]} />
+                  <line x1={c[0] + 6} y1={c[1]} x2={c[0] + 20} y2={c[1]} />
+                  <line x1={c[0]} y1={c[1] - 20} x2={c[0]} y2={c[1] - 6} />
+                  <line x1={c[0]} y1={c[1] + 6} x2={c[0]} y2={c[1] + 20} />
+                </g>
+              ) : (
+                <>
+                  <circle cx={c[0]} cy={c[1]} r={9 * pulse + 4} fill={`${routeColor}40`} />
+                  <circle cx={c[0]} cy={c[1]} r={7} fill={routeColor} style={{ filter: dotGlow }} />
+                </>
+              )}
               <text
                 x={c[0]}
                 y={c[1] + 42}
                 textAnchor="middle"
-                fill={theme.map.label}
-                stroke={theme.map.ocean}
+                fill={labelFill}
+                stroke={labelStroke}
                 strokeWidth={5}
                 paintOrder="stroke"
-                style={{ fontFamily: oswald, fontWeight: 700, fontSize: 30, letterSpacing: '0.06em' }}
+                style={{ fontFamily: labelFont, fontWeight: 700, fontSize: 30, letterSpacing: '0.06em' }}
               >
-                {entry.name.toUpperCase()}
+                {label}
               </text>
             </g>
           );
         })}
       </svg>
+
+      {v === 'tactical' && (
+        <AbsoluteFill
+          style={{
+            pointerEvents: 'none',
+            backgroundImage: 'repeating-linear-gradient(0deg, rgba(255,255,255,0.05) 0px, transparent 1px, transparent 3px)',
+          }}
+        />
+      )}
+      {v === 'parchment' && (
+        <div style={{ position: 'absolute', inset: 26, border: `2px solid ${theme.ink}55`, pointerEvents: 'none' }} />
+      )}
 
       {/* route label chip */}
       {routes[0]?.label ? (
@@ -275,25 +339,31 @@ export const MapScene: React.FC<{
             top: '7%',
             left: '50%',
             transform: 'translateX(-50%)',
-            fontFamily: inter,
+            fontFamily: v === 'parchment' ? playfair : inter,
             fontWeight: 700,
             fontSize: 30,
             letterSpacing: '0.2em',
             textTransform: 'uppercase',
-            color: theme.map.route,
-            backgroundColor: `${theme.map.ocean}c0`,
-            border: `1px solid ${theme.map.route}66`,
+            color: routeColor,
+            backgroundColor: `${oceanColor}c0`,
+            border: `1px solid ${routeColor}66`,
             padding: '12px 34px',
-            borderRadius: 6,
+            borderRadius: v === 'tactical' ? 0 : 6,
             opacity: interpolate(frame, [25, 45], [0, 1], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }),
           }}
         >
-          {routes[0].label}
+          {v === 'tactical' ? `[ ${routes[0].label} ]` : routes[0].label}
         </div>
       ) : null}
 
       <AbsoluteFill
-        style={{ background: 'radial-gradient(circle, transparent 45%, rgba(0,0,0,0.55) 100%)', pointerEvents: 'none' }}
+        style={{
+          background:
+            v === 'parchment'
+              ? `radial-gradient(circle, transparent 45%, ${theme.ink}45 100%)`
+              : 'radial-gradient(circle, transparent 45%, rgba(0,0,0,0.55) 100%)',
+          pointerEvents: 'none',
+        }}
       />
     </AbsoluteFill>
   );

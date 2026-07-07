@@ -5,9 +5,13 @@ import os from 'os';
 import path from 'path';
 import { execFileSync } from 'child_process';
 import { TTS_VOICE, TTS_PROVIDER, CHATTERBOX_ENDPOINT, CHATTERBOX_EXAGGERATION, KEYS } from './config';
+import { channelVoice } from './channel';
 import type { WordStamp } from './types';
 
 const TICKS_PER_SECOND = 10_000_000; // Edge WordBoundary offsets are in 100ns ticks
+
+/** Effective edge-tts voice: the selected channel's narrator, else the global default. */
+const activeVoice = (): string => channelVoice() ?? TTS_VOICE;
 
 export interface TtsResult {
   words: WordStamp[];
@@ -16,8 +20,9 @@ export interface TtsResult {
 
 /** Cache-key component: switching provider/voice must invalidate scene caches. */
 export function ttsSignature(): string {
-  // v2: whisper alignment fixed (16 kHz resample) — invalidates pre-fix caches
-  return chatterboxAvailable() ? `chatterbox-v2:${CHATTERBOX_EXAGGERATION}` : `edge:${TTS_VOICE}`;
+  // v2: whisper alignment fixed (16 kHz resample) — invalidates pre-fix caches.
+  // The active voice is in the key so different channels don't share cached audio.
+  return chatterboxAvailable() ? `chatterbox-v2:${CHATTERBOX_EXAGGERATION}` : `edge:${activeVoice()}`;
 }
 
 function chatterboxAvailable(): boolean {
@@ -171,7 +176,7 @@ async function synthesizeEdge(text: string, outPath: string, voice: string): Pro
  * timestamps. Prefers the self-hosted Chatterbox endpoint; falls back to Edge
  * neural TTS so the pipeline never blocks on the GPU endpoint.
  */
-export async function synthesize(text: string, outPath: string, voice: string = TTS_VOICE): Promise<TtsResult> {
+export async function synthesize(text: string, outPath: string, voice: string = activeVoice()): Promise<TtsResult> {
   if (chatterboxAvailable()) {
     try {
       return await synthesizeChatterbox(text, outPath);

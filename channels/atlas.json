@@ -1,0 +1,9 @@
+{
+  "theme": "gold",
+  "voice": "en-US-ChristopherNeural",
+  "accent": "#4FA3D1",
+  "niche": "geopolitics & great-power history",
+  "variants": {
+    "KenBurns": { "fullbleed": 3, "classic": 2, "framed": 1 }
+  }
+}

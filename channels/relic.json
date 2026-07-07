@@ -1,0 +1,9 @@
+{
+  "theme": "vintage",
+  "voice": "en-GB-RyanNeural",
+  "accent": "#8FB339",
+  "niche": "ancient history & archaeology",
+  "variants": {
+    "KenBurns": { "framed": 3, "classic": 2, "fullbleed": 0 }
+  }
+}

@@ -12,6 +12,7 @@ export interface ThumbnailProps {
   /** background-removed PNG (public-relative) — enables the 'subject' layout */
   cutout?: string;
   theme?: string;
+  themeAccent?: string;
   layout?: ThumbnailLayout;
   [key: string]: unknown;
 }
@@ -99,8 +100,8 @@ const Kicker: React.FC<{ theme: Theme }> = ({ theme }) => (
  * else 'full' (graded full-bleed image + headline). 'split' is available as
  * an explicit choice for future two-image or portrait-source thumbnails.
  */
-export const Thumbnail: React.FC<ThumbnailProps> = ({ title, image, thumbText, cutout, theme: themeName, layout }) => {
-  const theme = resolveTheme(themeName);
+export const Thumbnail: React.FC<ThumbnailProps> = ({ title, image, thumbText, cutout, theme: themeName, themeAccent, layout }) => {
+  const theme = resolveTheme(themeName, themeAccent);
   const words = deriveWords(title, thumbText);
   const resolvedLayout: ThumbnailLayout = layout ?? (cutout ? 'subject' : 'full');
 

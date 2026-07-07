@@ -99,6 +99,7 @@ export interface ThumbnailRenderProps {
   title: string;
   image: string;
   theme?: string;
+  themeAccent?: string;
   thumbText?: string;
   cutout?: string;
   layout?: 'subject' | 'split' | 'full';

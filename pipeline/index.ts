@@ -12,6 +12,8 @@ import { writeScript } from './script';
 import { planScenes } from './planner';
 import { researchTopic } from './research';
 import { synthesize, ttsSignature } from './tts';
+import { channelTheme, channelAccent, channelVariantWeights, CHANNEL } from './channel';
+import { pickVariant } from './variants';
 import { resolveImages } from './assets/resolve';
 import { renderVideo, renderThumbnail, syncPublicFileToBundle } from './render';
 import { writeMetadata } from './metadata';
@@ -282,7 +284,11 @@ async function produceScene(opts: {
     Record<string, unknown> & { cues?: Cue[] };
   const P = `  [S${sceneIdx + 1}]`;
 
-  const cacheKey = `scene_${slug}_${sceneIdx}_${hash(JSON.stringify(scenePlan) + ttsSignature() + '|match-v6')}`;
+  // channel-weighted, seed-stable visual variant for workhorse components
+  // (undefined for components without variants). In the cache key so changing a
+  // channel's variant weights re-picks and re-renders.
+  const variant = pickVariant(component, narration, channelVariantWeights());
+  const cacheKey = `scene_${slug}_${sceneIdx}_${hash(JSON.stringify(scenePlan) + ttsSignature() + (variant ?? '') + '|match-v6')}`;
   const cachedScene = readCache<SceneArtifact>(cacheKey);
   if (cachedScene) {
     const cutoutFiles = ((cachedScene.props.cutouts as (string | null)[] | undefined) ?? []).filter(
@@ -377,6 +383,7 @@ async function produceScene(opts: {
   }
 
   const props: Record<string, unknown> = { ...specificProps, images, focalPoints, imageTones, imageMeta, cues };
+  if (variant) props.variant = variant;
   if (component === 'FontRollDecoder') {
     const displayWords = (specificProps as { words?: { text: string }[] }).words ?? [];
     props.wordDelays = matchWordDelays(displayWords, narration, tts.words);
@@ -491,11 +498,16 @@ async function produceVideo(topic: Topic, index: number): Promise<void> {
   );
 
   const slug = `${slugify(script.title)}_${index + 1}`;
-  // theme: per-topic THEME: line > channel default > derived from mood
+  // theme: per-topic THEME: line > channel default > global default > derived from mood
+  const chTheme = channelTheme();
   const videoTheme: ThemeName =
     (topic.theme as ThemeName | undefined) ??
+    (chTheme && isTheme(chTheme) ? (chTheme as ThemeName) : undefined) ??
     (isTheme(DEFAULT_THEME) ? DEFAULT_THEME : themeFromMood(script.mood));
-  console.log(`🎨 Theme: ${videoTheme}`);
+  const themeAccent = channelAccent();
+  console.log(
+    `🎨 Theme: ${videoTheme}${themeAccent ? ` · accent ${themeAccent}` : ''}${CHANNEL ? ` · channel "${CHANNEL.name}"` : ''}`,
+  );
 
   const assetDirAbs = path.join(PUBLIC_DIR, 'assets', slug);
   const assetDirRel = `assets/${slug}`;
@@ -613,6 +625,7 @@ async function produceVideo(topic: Topic, index: number): Promise<void> {
     hasBgm: music !== null || fs.existsSync(path.join(PUBLIC_DIR, 'bgm.mp3')),
     bgmPath: music?.bgmPath,
     theme: videoTheme,
+    themeAccent,
     usedUrls: [...usedUrls],
     // extra fields for --rerender and inspection (ignored by the composition)
     script,
@@ -656,7 +669,7 @@ async function produceVideo(topic: Topic, index: number): Promise<void> {
     }
   }
 
-  const thumbBase = { title: script.title, image: finalThumbImage, theme: videoTheme, thumbText: script.thumbText, cutout: cutoutRel };
+  const thumbBase = { title: script.title, image: finalThumbImage, theme: videoTheme, themeAccent, thumbText: script.thumbText, cutout: cutoutRel };
   if (THUMBS_ALL) {
     for (const layout of ['subject', 'split', 'full'] as const) {
       if (layout === 'subject' && !cutoutRel) continue;

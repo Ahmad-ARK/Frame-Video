@@ -137,7 +137,33 @@ const ThemeContext = React.createContext<Theme>(THEMES.gold);
 export const ThemeProvider = ThemeContext.Provider;
 export const useTheme = (): Theme => React.useContext(ThemeContext);
 
-export const resolveTheme = (name?: string): Theme => THEMES[name ?? ''] ?? THEMES.gold;
+const hexToRgba = (hex: string, a: number): string => {
+  const h = hex.replace('#', '');
+  const n = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+  const r = parseInt(n.slice(0, 2), 16);
+  const g = parseInt(n.slice(2, 4), 16);
+  const b = parseInt(n.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${a})`;
+};
+
+/**
+ * Resolve a base theme by name. When `accent` (a hex colour) is given, the
+ * theme's signature colour is overridden — accent, its glow, the karaoke active
+ * word, and the map focus/route — so a single base theme yields many distinct
+ * per-channel identities (see pipeline/channel.ts). Everything else (image
+ * grade, paper, fire, etc.) stays, keeping the film's cohesion.
+ */
+export const resolveTheme = (name?: string, accent?: string): Theme => {
+  const base = THEMES[name ?? ''] ?? THEMES.gold;
+  if (!accent || !/^#?[0-9a-fA-F]{3,6}$/.test(accent)) return base;
+  return {
+    ...base,
+    accent,
+    accentGlow: hexToRgba(accent, 0.75),
+    captionActive: accent,
+    map: { ...base.map, focus: accent, route: accent, focusStroke: hexToRgba(accent, 0.9) },
+  };
+};
 
 /** Grade filter for a fetched image; `tone` comes from the vision pass. */
 export const gradeFilter = (t: Theme, tone?: string | null, extra = ''): string =>

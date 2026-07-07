@@ -1,21 +1,20 @@
 # Documentary Pipeline
 
-Fully automatic faceless-YouTube documentary generator. You write a **topic**,
-it produces an upload-ready package:
+Faceless-YouTube documentary generator. Give it a **topic** (or your own exact
+**script**) and it produces an upload-ready package:
 
 - 🎬 a narrated, captioned, color-graded 1080p documentary (`.mp4`)
 - 📱 a vertical ≤59s **Short** cut from the strongest scenes
-- 🖼️ a **thumbnail**
+- 🖼️ a **thumbnail** (AI-written hook text + auto subject cutout)
 - 📝 **metadata** (title, description with chapters + image credits, tags)
-- 🔍 an automated **QA report** — flagged scenes get their images re-sourced
-  and the video re-rendered without you touching anything
+- 🔍 an optional automated **QA** pass — flagged scenes get re-sourced and re-rendered
 
-Under the hood: research-grounded scriptwriting (hook → curiosity gap → payoff),
-18 scene components chosen by an AI director, word-synced text/image pops driven
-by real speech timestamps, vision-verified image sourcing from four providers
-with license filtering + attribution, mood-matched ducked music, SFX, and a
-video-wide visual **theme** (gold / noir / vintage) that color-grades every
-image so mismatched stock footage reads as one film.
+Under the hood: scriptwriting (or your verbatim script), 20+ scene components
+chosen by an AI director, word-synced text/image pops driven by real speech
+timestamps, vision-verified image sourcing from four providers with license
+filtering + attribution, mood-matched ducked music, SFX, per-channel visual
+identity, and a video-wide **theme** that color-grades every image so mismatched
+stock footage reads as one film.
 
 ---
 
@@ -24,36 +23,47 @@ image so mismatched stock footage reads as one film.
 | What | Why | Install |
 | --- | --- | --- |
 | **Node.js 18+** | everything | https://nodejs.org |
-| **ffmpeg + ffprobe on PATH** | audio normalization, durations, QA frames | https://ffmpeg.org/download.html (`winget install ffmpeg` on Windows) |
-| **Anthropic API key** | script, planning, image checks | https://console.anthropic.com |
-| Internet at render time | Google Fonts are fetched during rendering | — |
+| **ffmpeg + ffprobe on PATH** | audio normalization, durations, QA frames | https://ffmpeg.org (`winget install ffmpeg` on Windows) |
+| An **LLM key** (see §2) | scene planning, title, image checks | DeepSeek and/or Anthropic |
+| Internet at render time | Google Fonts are fetched while rendering | — |
 
-Optional but recommended: free **Pixabay** and **Pexels** API keys (see `.env.example`).
+Optional but recommended: free **Pixabay** + **Pexels** API keys (stock b-roll).
 
-## 2. Install & first run
+## 2. LLM providers (the cost knobs)
+
+The pipeline uses LLMs for two different jobs, and you can point each at a
+different provider via `.env`:
+
+| Role | What it does | Default | Env |
+| --- | --- | --- | --- |
+| **Planning** | maps script → scenes, image queries, cues; writes the title/thumbnail hook | DeepSeek **V4-Flash** if `DEEPSEEK_API_KEY` set, else Claude Sonnet | `DEEPSEEK_API_KEY`, `PLAN_MODEL` |
+| **Vision** | ranks/accepts images, reads focal point + brightness + subject; post-render QA | Claude **Haiku 4.5** | `ANTHROPIC_API_KEY`, `VISION_MODEL` |
+
+**Recommended cheap setup:** DeepSeek Platform key for planning (≈ **$0.01–0.02
+per video**, and prompt-caches automatically) + an Anthropic key for vision
+(≈ **$0.17**, or run `--no-qa` to roughly halve it). Planning falls back to
+Anthropic automatically if you don't set a DeepSeek key.
+
+DeepSeek uses its Anthropic-compatible endpoint (`api.deepseek.com/anthropic`),
+so the same code drives both — you only swap a key + model string.
+
+## 3. Install & first run
 
 ```bash
-git clone <this repo>   # or unzip the folder
 cd documentary-pipeline
 npm install
 
-cp .env.example .env    # then open .env and paste your ANTHROPIC_API_KEY
+cp .env.example .env    # then paste your keys (see §2)
 
-npm run run-pipeline    # renders every topic in input.txt
+npm run run-pipeline    # renders every topic in input.txt → out/
 ```
 
-First render downloads a headless Chrome (~150 MB) automatically. Outputs land
-in `out/`. That's the whole loop.
+First render downloads a headless Chrome (~150 MB) automatically.
 
-> **Minimal setup is just the Anthropic key.** Image search then uses
-> Wikimedia + Openverse only, and narration uses the free Edge neural voice.
-> Add the optional keys/endpoints in `.env.example` to unlock stock b-roll,
-> AI image generation, and the premium Chatterbox narrator.
+## 4. Writing topics — `input.txt`
 
-## 3. Writing topics — `input.txt`
-
-Topics are separated by lines containing `===`. A topic is a **prompt, not a
-script** — the pipeline researches it (Wikipedia) and writes the narration.
+Topics are separated by lines containing `===`. A topic is either a **prompt**
+(the pipeline researches + writes it) or your own **verbatim script**.
 
 ```
 The final 24 hours of Pompeii, hour by hour.
@@ -63,172 +73,182 @@ LENGTH: 5min
 The disappearance of the Roman Ninth Legion.
 ===
 VERBATIM: My exact narration, spoken word for word.
+
+Blank lines split it into acts (a "PART II" divider card between them).
 ```
 
-Per-topic option lines (each optional, one per line):
+Per-topic option lines (each optional):
 
 | Line | Effect |
 | --- | --- |
-| `LENGTH: 5min` (or `90s`) | long-form: multi-act script, chapter cards, mini-hooks every act, YouTube chapters |
+| `VERBATIM:` prefix | skip scriptwriting; your text is the narration verbatim |
 | `THEME: gold\|noir\|vintage` | visual theme for this video |
-| `VERBATIM:` prefix | skip scriptwriting, use your text as-is |
+| `LENGTH: 5min` (or `90s`) | prompt mode only: longer multi-act script + YouTube chapters |
 
-## 4. Outputs (per topic, in `out/`)
+**VERBATIM specifics** (this is the common mode):
+- **Blank lines = act boundaries** → a divider card appears between acts. No
+  blank lines = one continuous video, no dividers. You control pacing.
+- Long scripts are chunked automatically so planning never overflows.
+- The **title, thumbnail hook, and mood are AI-generated** from your script
+  (one tiny call) — so a script that opens "In 1953, the Korean War…" gets a
+  real title like *"The War That Never Ended"* + thumbnail *"STILL AT WAR"*.
+
+## 5. Channels — per-channel identity (`--channel`)
+
+Running the same pipeline for many channels risks looking like one content
+farm. A **channel config** gives each channel a distinct look + narrator so N
+channels read as N different shows. Create `channels/<name>.json`:
+
+```json
+{
+  "theme": "noir",
+  "voice": "en-US-ChristopherNeural",
+  "accent": "#E4572E",
+  "niche": "true crime & investigations"
+}
+```
+
+Then:
+
+```bash
+npm run run-pipeline -- --channel verdict
+```
+
+| Field | Effect |
+| --- | --- |
+| `theme` | base theme for this channel (a per-topic `THEME:` still overrides) |
+| `voice` | edge-tts narrator voice (different voice per channel is the #1 anti-farm signal) |
+| `accent` | hex signature colour — overrides the theme accent everywhere (captions, rules, glows, map, thumbnail) so one base theme yields many identities |
+| `niche` | your own note; not used at runtime |
+
+Example configs ship in `channels/` (`atlas`, `verdict`, `relic`). The chosen
+voice is part of the audio cache key, so channels never share cached narration.
+> Tip for scale: give each channel a **different niche** and **voice** — those
+> matter more than colour for looking like genuinely separate channels.
+
+## 6. Outputs (per topic, in `out/`)
 
 ```
 <slug>.mp4              the documentary
-<slug>_short.mp4        9:16 vertical Short (hook + highest-energy scenes)
-<slug>_thumb.png        thumbnail (or _thumb_subject/_split/_full.png with --thumbs=all)
-<slug>.metadata.txt     paste-ready title/description(+chapters+credits)/tags
-<slug>.qa.json          automated QA findings
+<slug>_short.mp4        9:16 vertical Short
+<slug>_thumb.png        thumbnail (+ _subject/_split/_full with --thumbs=all)
+<slug>.metadata.txt     paste-ready title / description(+chapters+credits) / tags
+<slug>.qa.json          QA findings (unless --no-qa)
 ```
 
-Working files: `public/assets/<slug>/` (downloaded images + narration audio),
-`public/props_<slug>.json` (exact render inputs — open `npm run dev` to inspect
-scenes in Remotion Studio).
+Working files: `public/assets/<slug>/` (images + narration audio),
+`public/props_<slug>.json` (exact render inputs; open `npm run dev` to inspect).
 
-## 5. Commands
+## 7. Commands
 
 ```bash
-npm run run-pipeline                 # produce all topics in input.txt
-npm run run-pipeline -- --force      # ignore stage cache, redo everything
-npm run run-pipeline -- --no-qa      # skip the QA/repair pass
-npm run run-pipeline -- --review     # pause before rendering for an asset review (see §5b)
-npm run run-pipeline -- --thumbs=all # render all 3 thumbnail layouts instead of just one (see §5c)
+npm run run-pipeline                        # produce all topics in input.txt
+npm run run-pipeline -- --channel <name>    # apply a channel identity (see §5)
+npm run run-pipeline -- --no-qa             # skip the QA/repair pass (cheaper)
+npm run run-pipeline -- --review            # curate images in a web UI before render (§8)
+npm run run-pipeline -- --force             # ignore cache, redo everything
+npm run run-pipeline -- --thumbs=all        # render all 3 thumbnail layouts
 npm run run-pipeline -- --rerender <slug>   # re-render from saved props (no API cost)
 
-npm run showcase                     # demo video containing every scene component
-npm run showcase -- noir             # ...in a specific theme
-npx tsx pipeline/themecheck.ts       # stills of every scene × every theme → out/themecheck/
-npm run dev                          # Remotion Studio (visual scene inspector)
+npm run showcase                            # demo video with every scene component
+npm run dev                                 # Remotion Studio (visual scene inspector)
+npx tsx pipeline/themecheck.ts              # stills of every scene × every theme
 ```
 
-Every pipeline stage caches in `.cache/` — if a run crashes (network, etc.),
-run the same command again and it resumes where it stopped.
+Every stage caches in `.cache/` — if a run dies (network, etc.), just run the
+same command again and it resumes. Delete `.cache/script_*.json` to force a
+title/script regenerate for an already-run topic.
 
-## 5b. Asset review UI (`--review`)
+## 8. Asset review UI (`--review`)
 
-`npm run run-pipeline -- --review` pauses each video right after all images
-are resolved, before rendering starts, and opens a local page at
-**http://localhost:4711** listing every image slot in the video: the scene,
-the narration, the search query used, and the image found (provider +
-license shown). Slots with no image found are outlined in red.
+Pauses each video after images are resolved, before rendering, and opens
+**http://localhost:4711** listing every image slot: scene, narration, search
+query, and the image found. Per slot you can **edit the query + Re-fetch** or
+**Upload** your own `.jpg/.png/.webp`. Click **Continue → Render** to resume
+with your edits baked in (thumbnail + credits included). Progress is saved
+after every edit, so closing the tab loses nothing.
 
-Per slot you can:
-- **edit the query and click Re-fetch** — pulls a fresh candidate (previously
-  used images are never repeated);
-- **Upload** your own `.jpg`/`.png`/`.webp` to replace that slot entirely
-  (credited as "User-provided" in the ledger).
+## 9. Render performance
 
-Click **Continue → Render** when you're happy; the pipeline resumes with your
-edits baked in (including the thumbnail and the credits ledger). Everything
-is saved to `public/props_<slug>.json` after every edit, so closing the
-browser tab mid-review loses nothing — just re-run with `--review` again.
+Rendering is frame-by-frame in headless Chrome; the blur/3D scenes dominate.
+Two knobs (both in `.env`, both auto-tuned):
 
-## 5c. Thumbnails
+| Env | Default | Effect |
+| --- | --- | --- |
+| `RENDER_CONCURRENCY` | all logical cores | parallel Chrome workers. Lower it (e.g. `8`) if the machine swaps/crashes on RAM |
+| `RENDER_GL` | `angle` (GPU) | GPU-accelerates blur/3D filters. Set `swiftshader` if headless GPU init fails on your box |
 
-Three layouts, auto-selected per video:
+On a 16-core machine this typically takes a 6-min video from ~30 min down to
+~10–12 min. For minutes-not-tens, render on a high-core cloud VM (same settings)
+or wire up Remotion Lambda.
 
-- **subject** — a background-removed cutout of the video's main person/object
-  pops in front of a blurred, graded backdrop with a themed outline glow. Used
-  automatically whenever the vision pass tags an image's focal point as a
-  `person` or `object` (cutouts run locally via `@imgly/background-removal-node`
-  — no API cost, ~5-10s the first time a model downloads, seconds after).
-- **split** — a solid color panel with the headline next to a graded image.
-  Used as the fallback layout.
-- **full** — graded full-bleed image behind the headline (the old design,
-  now with a bolder stroke and higher-contrast grade). Used if neither of the
-  above applies.
+## 10. Themes
 
-The headline text itself is a dedicated **`thumbText`** the script stage
-writes alongside the narration — a punchy 2-4 word curiosity hook ("NEVER
-FOUND", "300 DIED") distinct from the video's title, sized and stroked for
-readability at small feed sizes.
+A theme re-skins **all** scenes via design tokens and color-grades every fetched
+image (filter + tint wash + grain), so images from four stock sites look like
+one film. The vision pass tags each image bright/mid/dark so the grade adapts.
 
-Run `npm run run-pipeline -- --thumbs=all` to render all three layouts side
-by side (`<slug>_thumb_subject.png` / `_split.png` / `_full.png`) and pick
-your favorite by hand.
-
-## 6. Themes
-
-A theme re-skins **all** scenes via design tokens (accents, papers, map
-palette…) and runs every fetched image through a color grade (filter + tint
-wash + film grain), so images from four different stock sites look like one
-film. The vision pass tags each image bright/mid/dark so the grade adapts per
-image; AI-generated images are prompted in the theme's style from birth.
-
-- `gold` — warm cinematic documentary (default)
+- `gold` — warm cinematic (default)
 - `noir` — high-contrast monochrome, crimson accent
 - `vintage` — sepia archive, parchment tones
 
-Priority: `THEME:` line in the topic → `DEFAULT_THEME` in `.env` → derived
-from the script's mood (tense→noir, somber→vintage, else gold).
+Theme priority: per-topic `THEME:` → `--channel` theme → `DEFAULT_THEME` in
+`.env` → derived from the script's mood. A channel `accent` recolours whichever
+theme is chosen (see §5).
 
-## 7. Scene components (the director picks per beat)
+## 11. Scene components (the director picks per beat)
 
-| Component | Use |
-| --- | --- |
-| HookTitle | cold-open: drifting footage montage, title slams in on the narration's key word |
-| KenBurns | multi-image montage, focal-aware zoom/pan, ≤4s per still |
-| ArchivalFilm | old-footage treatment (grain, flicker, gate weave) |
-| MacroScreenFocus | punchy highlighted headline |
-| SplitScreen | two contrasted subjects, angled divider, VS/⇄ badge |
-| QuoteOverlay | attributed quotation, word-staggered reveal |
-| StatueReveal | artifact close-up + typewriter narration |
-| Timeline | time-driven event sweep (2–5 dated events) |
-| GlitchGrid | energetic tiled reveal, HUD accents |
-| EditorialPaper | newspaper layout |
-| Map | d3-geo vector map: camera flies to the route, all route countries highlighted |
-| StatCounter | one striking number counts up |
-| GrungeCollage | stop-motion punk manifesto card |
-| InvestigationOpener | true-crime case-file scrapbook |
-| CinematicFire | embers + procedural fire wipe for epic turning points |
-| NewspaperAnnotation | academic layout, red hand-drawn circle/underline |
-| FontRollDecoder | kinetic typography, words scramble-decode in sync with speech |
-| SocialJustice | giant image-filled matte word + duotone wash |
-| ChapterCard / Credits | act dividers (long-form) and the attribution end card |
+**Imagery-led:** KenBurns, ArchivalFilm, SplitScreen, Map (d3-geo, route-aware),
+Timeline, StatCounter, CinematicFire, **ParallaxDeep** (true 3D depth dolly),
+**PhotoCarousel3D** (3D photo ring), **DocumentRig** (document on a desk, camera
+reads it), **CubeReveal** (before/after 3D flip).
 
-**Word-synced cues:** any imagery scene can carry up to 6 cues that fire the
-moment the narrator speaks a trigger word — `popText` slams a word on screen,
-`popImage` punches in a polaroid photo. Enumerations ("paper, spices, and
-gunpowder") become synced pop sequences automatically.
+**Typography-led:** HookTitle (cold open), **TitleParallax** (premium emphasis /
+act-divider card), MacroScreenFocus, QuoteOverlay, StatueReveal, GlitchGrid,
+EditorialPaper, GrungeCollage, InvestigationOpener, NewspaperAnnotation,
+FontRollDecoder, SocialJustice. Plus the Credits end card.
 
-## 8. Optional self-hosted endpoints (Modal)
+**Word-synced cues:** any imagery scene can carry cues that fire the moment the
+narrator speaks a trigger word — `popText` slams a word on screen, `popImage`
+punches in a polaroid. Enumerations become synced pop sequences automatically.
 
-Both are optional; the pipeline works without them.
+## 12. Optional self-hosted endpoints (Modal)
 
-**Chatterbox TTS** (much better narrator, MIT-licensed model):
+Both optional; the pipeline works without them.
+
+**Chatterbox TTS** (better narrator, MIT-licensed):
 ```bash
-pip install modal && modal setup          # one-time Modal account/auth
+pip install modal && modal setup
 modal deploy modal/chatterbox_tts.py
-modal secret create tts-auth TTS_AUTH_TOKEN=<any-random-string>
-# put the endpoint URL + the same random string into .env (see .env.example)
+modal secret create tts-auth TTS_AUTH_TOKEN=<random-string>
+# put the endpoint URL + same string in .env
 ```
 Falls back to the free Edge voice automatically if unreachable.
 
-**FLUX image generation**: any Modal FLUX.1-dev deployment that accepts
-`POST {prompt,width,height,steps}` with Modal proxy auth. Wire it via
-`FLUX_ENDPOINT` / `FLUX_MODAL_KEY` / `FLUX_MODAL_SECRET`.
+**FLUX image generation** (last-resort b-roll when no real photo is found): any
+Modal FLUX.1-dev deployment accepting `POST {prompt,width,height,steps}`. Wire
+via `FLUX_ENDPOINT` / `FLUX_MODAL_KEY` / `FLUX_MODAL_SECRET`.
+> Note: AI generation is only good for *generic* b-roll. It cannot produce a
+> correct likeness of a real person (e.g. a named historical figure) — use the
+> review UI to pick a real photo for those.
 
-## 9. Licensing & attribution
+## 13. Licensing & attribution
 
-Image search is filtered to commercial-safe licenses (public domain, CC0,
-CC BY, CC BY-SA, Pexels/Pixabay licenses). Attributions are collected per
-video, rendered on the credits end card, and written into the metadata
-description. Background music is Kevin MacLeod (incompetech.com, CC BY 4.0)
-— its attribution is added automatically. AI-generated images are labeled.
+Image search is filtered to commercial-safe licenses (public domain, CC0, CC BY,
+CC BY-SA, Pexels/Pixabay). Attributions are collected per video, shown on the
+credits card, and written into the metadata. Music is Kevin MacLeod
+(incompetech.com, CC BY 4.0), attributed automatically. AI images are labeled.
 
-## 10. Troubleshooting
+## 14. Troubleshooting
 
-- **`ffmpeg` not found** — install it and make sure `ffmpeg -version` works in
-  a fresh terminal. Without it audio isn't loudness-normalized and QA is skipped.
-- **Wikimedia searches fail (ENOTFOUND / timeouts)** — Wikimedia is blocked in
-  some regions (e.g. Pakistan). Use a VPN for best historical imagery; the
-  pipeline still completes via the other sources.
-- **Headless Chrome timeout on first render** — transient on Windows; the
-  renderer retries automatically. Just re-run if a whole run dies; the cache
-  resumes it.
-- **`modal deploy` crashes with a 'charmap' error on Windows** — run it as
-  `PYTHONUTF8=1 modal deploy ...`.
-- Keep the project on a local disk if possible — cloud-synced folders
-  (OneDrive/Dropbox) can lock files mid-render.
+- **`ffmpeg` not found** — install it; confirm `ffmpeg -version` in a fresh terminal.
+- **Wikimedia searches fail (ENOTFOUND / all downloads fail)** — Wikimedia is
+  region-blocked (e.g. Pakistan); use a VPN for historical imagery. On a *large*
+  job, blanket download failures can also be rate-limiting, not a block — the
+  pipeline retries with backoff and still completes via the other sources.
+- **Render fails to start with a GPU error** — set `RENDER_GL=swiftshader` in `.env`.
+- **Machine swaps / render crashes on memory** — set `RENDER_CONCURRENCY` lower.
+- **`modal deploy` 'charmap' error on Windows** — run `PYTHONUTF8=1 modal deploy ...`.
+- Keep the project on a **local disk** — cloud-synced folders (OneDrive/Dropbox)
+  can lock files mid-render.
+```
