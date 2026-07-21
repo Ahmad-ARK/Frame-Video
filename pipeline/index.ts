@@ -280,9 +280,21 @@ async function produceScene(opts: {
   fluxStyle?: string;
 }): Promise<SceneArtifact> {
   const { scenePlan, sceneIdx, slug, assetDirAbs, assetDirRel, usedUrls, counter, fluxStyle } = opts;
-  const { component, narration, imageQueries, cues: planCues, ...specificProps } = scenePlan as ScenePlan &
+  const { component, narration, imageQueries, cues: rawCues, ...specificProps } = scenePlan as ScenePlan &
     Record<string, unknown> & { cues?: Cue[] };
   const P = `  [S${sceneIdx + 1}]`;
+
+  // Cap popText slams per scene — the planner tends to over-use them (one per
+  // enumeration item), and too many tilted text pops in a row reads as noisy.
+  // popImage cues are untouched; this only trims popText, keeping the first N
+  // in narration order (a code-level guarantee, independent of prompt tuning).
+  const MAX_POPTEXT_PER_SCENE = 2;
+  let popTextCount = 0;
+  const planCues = rawCues?.filter((c) => {
+    if (c.action !== 'popText') return true;
+    popTextCount++;
+    return popTextCount <= MAX_POPTEXT_PER_SCENE;
+  });
 
   // channel-weighted, seed-stable visual variant for workhorse components
   // (undefined for components without variants). In the cache key so changing a
@@ -873,8 +885,14 @@ async function rerender(slug: string): Promise<void> {
 }
 
 async function main() {
-  if (!KEYS.anthropic) {
-    console.error('❌ ANTHROPIC_API_KEY missing in .env');
+  // Anthropic is only REQUIRED when it's the sole provider for a role — i.e. no
+  // DeepSeek key (planning fallback) or no Gemini key (vision fallback). With
+  // both of those set, the pipeline never touches Anthropic and shouldn't demand it.
+  if (!KEYS.anthropic && (!KEYS.deepseek || !KEYS.gemini)) {
+    const missingFallbackFor = [!KEYS.deepseek && 'planning (no DEEPSEEK_API_KEY)', !KEYS.gemini && 'vision (no GEMINI_API_KEY)']
+      .filter(Boolean)
+      .join(' and ');
+    console.error(`❌ ANTHROPIC_API_KEY missing in .env — needed as a fallback for ${missingFallbackFor}`);
     process.exit(1);
   }
   if (RERENDER_SLUG) {

@@ -43,17 +43,17 @@ function buildDirectorPrompt(isFirstAct: boolean): string {
       `- NewspaperAnnotation: academic breakdown — image circled in red marker, headline underlined.\n` +
       `- FontRollDecoder: kinetic typography, words scramble-decode in one by one. For rapid-fire hooks/summaries. Use words FROM the narration so they sync to the voice.\n` +
       `- SocialJustice: giant image-filled matte word + foreground fragment; movements, uprisings, systemic themes.\n\n` +
-      `## WORD-SYNCED CUES (the retention weapon — use them a LOT)\n` +
+      `## WORD-SYNCED CUES (the retention weapon — use sparingly, for real emphasis)\n` +
       `Any scene can carry up to 6 cues. A cue fires at the exact moment the narrator speaks its trigger word.\n` +
-      `- popText: a big word slams on screen. Use for enumerations, names, dates, numbers, punchlines.\n` +
+      `- popText: a big word slams on screen. Reserve for the ONE most important punchline, name, date, or number in the scene — not every item in a list.\n` +
       `- popImage: a polaroid-style photo punches in. Use when a specific person/place/object is named mid-sentence.\n` +
       `RULES:\n` +
       `- "trigger" must be copied VERBATIM from that scene's narration (one word, or two consecutive words).\n` +
-      `- Enumerations MUST become cue sequences. Example — narration "Buddhism, Islam and Christianity spread along these roads":\n` +
-      `  cues: [{trigger:"Buddhism", action:"popText", text:"BUDDHISM"}, {trigger:"Islam", action:"popText", text:"ISLAM"}, {trigger:"Christianity", action:"popText", text:"CHRISTIANITY"}]\n` +
-      `  (or popImage with an imageQuery per faith if imagery serves better)\n` +
+      `- Max 2 popText cues per scene (hard limit — extra ones are dropped). popImage has no such limit.\n` +
+      `- For enumerations, prefer popImage per item (imageQuery per entity) — it's visually richer and not capped. Only use popText for the single most important item, if any. Example — narration "Buddhism, Islam and Christianity spread along these roads":\n` +
+      `  cues: [{trigger:"Buddhism", action:"popImage", imageQuery:"Buddhist stupa"}, {trigger:"Islam", action:"popImage", imageQuery:"Islamic mosque architecture"}, {trigger:"Christianity", action:"popImage", imageQuery:"early Christian church mosaic"}]\n` +
       `- Put cues on imagery-led scenes. Do NOT put cues on typography-led scenes (they are already text-dense).\n` +
-      `- Use popText for abstractions, popImage for concrete nameable things. Mix them.\n\n` +
+      `- Use popText for abstractions, popImage for concrete nameable things. Mix them, but keep popText rare.\n\n` +
       `## IMAGE QUERY CRAFT (think like a photo archive librarian)\n` +
       `- Every query must carry the video's GLOBAL context, not just the sentence. Bad: "temple". Good: "Buddhist stupa Dunhuang China".\n` +
       `- Prefer named entities: specific paintings, people, buildings, artifacts, events. They search 10x better than concepts.\n` +
